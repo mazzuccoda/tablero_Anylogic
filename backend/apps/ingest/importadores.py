@@ -478,16 +478,28 @@ def importar_kpis_barrido(contenido_csv: bytes, nombre_archivo: str = "kpis_por_
 
         run_id = f"{escenario_codigo}-R{replica}"
         scenario, _ = Scenario.objects.get_or_create(project=proyecto, codigo=escenario_codigo)
-        run, _ = SimulationRun.objects.update_or_create(
-            run_id=run_id,
-            defaults={
-                "scenario": scenario,
-                "replica": replica,
-                "tipo": TipoCorrida.BARRIDO,
-                "nivel_auditoria": NivelAuditoria.DESACTIVADA,
-                "version_modelo": texto(fila.get("version_modelo")),
-            },
-        )
+        defaults = {
+            "scenario": scenario,
+            "replica": replica,
+            "tipo": TipoCorrida.BARRIDO,
+            "nivel_auditoria": NivelAuditoria.DESACTIVADA,
+            "version_modelo": texto(fila.get("version_modelo")),
+        }
+        auditada = SimulationRun.objects.filter(
+            run_id=run_id, tipo=TipoCorrida.AUDITORIA
+        ).first()
+        if auditada is not None:
+            # El barrido incluye la corrida que ademas se audito: sus KPIs enriquecen el tablero,
+            # pero degradarla a BARRIDO borraria el drill-down de unas tablas que si estan.
+            del defaults["tipo"], defaults["nivel_auditoria"]
+            mensajes.append(
+                _mensaje(
+                    INFO,
+                    f"{run_id} ya estaba importada como corrida auditada: se le agregaron los "
+                    "KPIs del barrido y se conservo el drill-down",
+                )
+            )
+        run, _ = SimulationRun.objects.update_or_create(run_id=run_id, defaults=defaults)
         valores = {c: flotante(fila.get(c)) for c in columnas_kpi}
         ScenarioRunKpi.objects.update_or_create(
             simulation_run=run,
@@ -507,7 +519,7 @@ def importar_kpis_barrido(contenido_csv: bytes, nombre_archivo: str = "kpis_por_
     lote.mensajes = mensajes
     lote.estado = (
         EstadoImportacion.COMPLETADA_CON_ADVERTENCIAS
-        if mensajes
+        if any(m["nivel"] == ADVERTENCIA for m in mensajes)
         else EstadoImportacion.COMPLETADA
     )
     lote.save(update_fields=["mensajes", "filas_por_tabla", "estado"])
