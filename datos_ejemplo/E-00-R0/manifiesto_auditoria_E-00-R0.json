@@ -1,0 +1,65 @@
+{
+  "run_id": "E-00-R0",
+  "version_esquema": "ADR-064.1",
+  "escenario": "E-00",
+  "replica": 0,
+  "nivel_auditoria": "COMPLETA",
+  "duracion_campania_dias": 5,
+  "generado": "Tue Aug 04 12:00:00 ART 2026",
+  "tablas": {
+    "decisiones_alternativas": {
+      "archivo": "decisiones_alternativas.csv",
+      "filas": 5
+    },
+    "asignaciones_elegidas": {
+      "archivo": "asignaciones_elegidas.csv",
+      "filas": 2
+    },
+    "ejecucion_arcos": {
+      "archivo": "ejecucion_arcos.csv",
+      "filas": 7
+    },
+    "costos_eventos": {
+      "archivo": "costos_eventos.csv",
+      "filas": 9
+    },
+    "snapshot_inventario": {
+      "archivo": "snapshot_inventario.csv",
+      "filas": 10
+    },
+    "snapshot_capacidad_recursos": {
+      "archivo": "capacidad_por_dia.csv",
+      "filas": -1
+    }
+  },
+  "claves": {
+    "decisiones_alternativas": [
+      "run_id",
+      "id_alternativa"
+    ],
+    "asignaciones_elegidas": [
+      "run_id",
+      "id_asignacion"
+    ],
+    "ejecucion_arcos": [
+      "run_id",
+      "id_evento_arco"
+    ],
+    "costos_eventos": [
+      "run_id",
+      "id_costo"
+    ],
+    "snapshot_inventario": [
+      "run_id",
+      "dia",
+      "ubicacion",
+      "producto"
+    ],
+    "snapshot_capacidad_recursos": [
+      "run_id",
+      "dia",
+      "tipo_recurso",
+      "ubicacion"
+    ]
+  }
+}

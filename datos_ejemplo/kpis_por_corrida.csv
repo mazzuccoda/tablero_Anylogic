@@ -1,0 +1,5 @@
+version_modelo,id_escenario,replica,semilla,costo_total_usd,costo_usd_tn,nivel_servicio,atraso_promedio_dias,utilizacion_flota,utilizacion_portacontenedor,toneladas_exportadas,contenedores_exportados,pedidos_sin_alternativa_factible,uso_posiciones_consolidacion
+2026.08-mvp,E-00,0,1001,57180.0000,73.7900,0.9700,0.4200,0.6100,0.7400,775.0000,31.0000,0.0000,0.7100
+2026.08-mvp,E-00,1,1002,57620.0000,74.2200,0.9650,0.4600,0.6200,0.7500,776.0000,31.0000,0.0000,0.7200
+2026.08-mvp,E-03,0,2001,61240.0000,71.0500,0.9900,0.1800,0.6800,0.8100,862.0000,35.0000,0.0000,0.8400
+2026.08-mvp,E-03,1,2002,61880.0000,71.6000,0.9880,0.2100,0.6900,0.8200,864.0000,35.0000,0.0000,0.8500

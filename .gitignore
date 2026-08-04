@@ -1,0 +1,28 @@
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+staticfiles/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+*.tsbuildinfo
+
+# Datos y artefactos regenerables
+datos_ejemplo/*.zip
+resultados/
+*.log
+
+# Editores
+.vscode/
+.idea/
+.DS_Store

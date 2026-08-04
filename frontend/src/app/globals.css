@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-fondo text-slate-800;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-lg border border-borde bg-panel p-4 shadow-sm;
+  }
+
+  .titulo-panel {
+    @apply mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .tabla {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .tabla th {
+    @apply border-b border-borde bg-slate-50 px-2 py-2 text-left font-medium text-slate-600;
+  }
+
+  .tabla td {
+    @apply border-b border-borde px-2 py-1.5 align-top;
+  }
+
+  .boton {
+    @apply rounded border border-borde bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50;
+  }
+
+  .boton-primario {
+    @apply rounded bg-acento px-3 py-1.5 text-sm text-white hover:bg-teal-800 disabled:opacity-50;
+  }
+
+  .campo {
+    @apply rounded border border-borde px-2 py-1.5 text-sm;
+  }
+}
