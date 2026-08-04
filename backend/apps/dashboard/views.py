@@ -2,6 +2,7 @@ import csv
 
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils.text import slugify
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -183,13 +184,20 @@ def exportar_tabla(request, identificador, tabla):
     modelo, serializer_class = TABLAS_EXPORTABLES[tabla]
     filas = modelo.objects.filter(simulation_run=run)
 
+    aplicados = []
     for campo, valor in request.query_params.items():
         if campo in {f.name for f in modelo._meta.get_fields() if hasattr(f, "name")}:
             filas = filas.filter(**{campo: valor})
+            aplicados.append(f"{campo}-{valor}")
 
     datos = serializer_class(filas, many=True).data
+    # El filtro va en el nombre: dos exportaciones distintas de la misma tabla no pueden bajar
+    # con el mismo archivo.
+    sufijo = "_" + "_".join(slugify(a) for a in aplicados) if aplicados else ""
     respuesta = HttpResponse(content_type="text/csv")
-    respuesta["Content-Disposition"] = f'attachment; filename="{run.run_id}_{tabla}.csv"'
+    respuesta["Content-Disposition"] = (
+        f'attachment; filename="{run.run_id}_{tabla}{sufijo}.csv"'
+    )
 
     if not datos:
         return respuesta

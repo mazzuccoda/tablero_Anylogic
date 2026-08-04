@@ -155,6 +155,32 @@ def test_importa_el_barrido(kpis_barrido):
     assert ScenarioRunKpi.objects.get(simulation_run=corrida).valores["nivel_servicio"] == 0.988
 
 
+def test_el_barrido_no_degrada_una_corrida_ya_auditada(paquete, kpis_barrido):
+    # kpis_por_corrida.csv trae E-00 replica 0, o sea el mismo run_id del paquete auditado.
+    importar_paquete_auditoria(paquete)
+
+    lote = importar_kpis_barrido(kpis_barrido)
+
+    run = SimulationRun.objects.get(run_id="E-00-R0")
+    assert run.tipo == TipoCorrida.AUDITORIA
+    assert run.tiene_drill_down is True
+    assert DecisionAlternative.objects.filter(simulation_run=run).count() == 5
+    assert ScenarioRunKpi.objects.get(simulation_run=run).valores["nivel_servicio"] == 0.97
+    assert lote.estado == EstadoImportacion.COMPLETADA
+    assert any("se conservo el drill-down" in m["texto"] for m in lote.mensajes)
+
+
+def test_el_paquete_auditado_promueve_una_corrida_ya_cargada_por_el_barrido(paquete, kpis_barrido):
+    importar_kpis_barrido(kpis_barrido)
+
+    importar_paquete_auditoria(paquete)
+
+    run = SimulationRun.objects.get(run_id="E-00-R0")
+    assert run.tipo == TipoCorrida.AUDITORIA
+    assert run.tiene_drill_down is True
+    assert ScenarioRunKpi.objects.get(simulation_run=run).valores["nivel_servicio"] == 0.97
+
+
 def test_rechaza_un_barrido_sin_columnas_de_identidad():
     with pytest.raises(ImportacionRechazada):
         importar_kpis_barrido(b"costo_total_usd,nivel_servicio\n100,0.9\n")
