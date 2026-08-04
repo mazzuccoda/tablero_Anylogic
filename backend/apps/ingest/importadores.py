@@ -82,7 +82,13 @@ def _filas(contenido: bytes) -> tuple[list[str], list[dict[str, str]]]:
     except StopIteration:
         return [], []
     encabezado = [c.strip() for c in encabezado]
-    filas = [dict(zip(encabezado, fila)) for fila in lector if any(c.strip() for c in fila)]
+    # strict=False: una fila con menos celdas deja esos campos ausentes, que se leen como vacios,
+    # en vez de romper la importacion entera.
+    filas = [
+        dict(zip(encabezado, fila, strict=False))
+        for fila in lector
+        if any(c.strip() for c in fila)
+    ]
     return encabezado, filas
 
 
