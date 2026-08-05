@@ -500,19 +500,21 @@ def _arcos() -> list[str]:
 def _costos() -> list[str]:
     base = {"run_id": RUN_ID, "escenario": ESCENARIO, "replica": REPLICA}
     definiciones = [
-        ("C-0001", 1.85, 1, "CAJA", "ESTIBA", "P-0001", "A-0001", 500.0, 12.0, 6000.0, "PEDIDO"),
+        ("C-0001", 1.85, 1, "CAJA", "OUT_DEPOSITO", "P-0001", "A-0001", 500.0, 12.0, 6000.0,
+         "PEDIDO"),
         ("C-0002", 2.25, 2, "CAJA", "FLETE_CONTENEDOR", "P-0001", "A-0001", 20.0, 1250.0,
          25000.0, "CONTENEDOR"),
         ("C-0003", 2.40, 2, "CAJA", "THC", "P-0001", "A-0001", 20.0, 190.0, 3800.0, "CONTENEDOR"),
-        ("C-0004", 2.40, 2, "CAJA", "TERMINAL", "P-0001", "A-0001", 20.0, 90.0, 1800.0,
+        ("C-0004", 2.40, 2, "CAJA", "COSTO_TERMINAL", "P-0001", "A-0001", 20.0, 90.0, 1800.0,
          "CONTENEDOR"),
-        ("C-0005", 3.05, 3, "CAJA", "ESTIBA", "P-0002", "A-0002", 300.0, 12.0, 3600.0, "PEDIDO"),
+        ("C-0005", 3.05, 3, "CAJA", "OUT_DEPOSITO", "P-0002", "A-0002", 300.0, 12.0, 3600.0,
+         "PEDIDO"),
         ("C-0006", 3.40, 3, "CAJA", "FLETE_CONTENEDOR", "P-0002", "A-0002", 12.0, 1180.0,
          14160.0, "CONTENEDOR"),
         ("C-0007", 4.10, 4, "CAJA", "THC", "P-0002", "A-0002", 12.0, 190.0, 2280.0, "CONTENEDOR"),
-        ("C-0008", 4.90, 4, "CAJA", "ALMACENAJE", "", "", 300.0, 1.8, 540.0, "LOTE"),
+        ("C-0008", 4.90, 4, "CAJA", "ALMACENAMIENTO", "", "", 300.0, 1.8, 540.0, "LOTE"),
         # Costo de oportunidad: NO se suma al total de campania (ADR-064 seccion 5.4).
-        ("C-0009", 4.90, 4, "ECONOMICO", "OPORTUNIDAD_VENTANA", "P-0002", "A-0002", 25.0, 140.0,
+        ("C-0009", 4.90, 4, "ECONOMICO", "OPORTUNIDAD_FRIO", "P-0002", "A-0002", 25.0, 140.0,
          3500.0, "PEDIDO"),
     ]
     filas = []
@@ -541,7 +543,11 @@ def _costos() -> list[str]:
                     "destino": "TERMINAL_BAHIA",
                     "sitio": "PLANTA_NORTE" if pedido == "P-0001" else "DEPOSITO_SUR",
                     "proveedor": "PROVEEDOR_1",
-                    "unidad": "TN" if categoria in ("ESTIBA", "ALMACENAJE") else "CONTENEDOR",
+                    "unidad": (
+                        "USD_TN"
+                        if categoria in ("OUT_DEPOSITO", "ALMACENAMIENTO", "OPORTUNIDAD_FRIO")
+                        else "USD_CONTENEDOR"
+                    ),
                     "cantidad": cantidad,
                     "tarifa": tarifa,
                     "importe_usd": importe,
@@ -733,9 +739,17 @@ def escribir(destino: Path) -> Path:
     (destino.parent / "kpis_por_corrida.csv").write_text("\n".join(lineas) + "\n", encoding="utf-8")
 
     paquete = destino.parent / f"paquete_auditoria_{RUN_ID}.zip"
+    # Solo los archivos del paquete: la carpeta tambien guarda paquetes reales de referencia y
+    # meterlos adentro haria que el importador avise de archivos que el esquema no declara.
+    del_paquete = {
+        *ARCHIVOS.values(),
+        "esquema_auditoria.json",
+        f"manifiesto_auditoria_{RUN_ID}.json",
+    }
     with zipfile.ZipFile(paquete, "w", zipfile.ZIP_DEFLATED) as zf:
         for archivo in sorted(destino.iterdir()):
-            zf.write(archivo, archivo.name)
+            if archivo.name in del_paquete:
+                zf.write(archivo, archivo.name)
 
     return paquete
 
