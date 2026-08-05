@@ -21,6 +21,10 @@ from apps.core.models import (
     SimulationRun,
     TipoContable,
 )
+from apps.dashboard.cost_explorer.restricciones import (
+    costo_unitario_elegida,
+    costo_unitario_sin_restriccion,
+)
 
 TIPOS_ARCO_ESPERA = ("ESPERA_PORTACONTENEDOR", "ESPERA_POSICION")
 
@@ -244,18 +248,20 @@ def por_que(run: SimulationRun, codigo_pedido: str) -> dict:
     ).order_by("dia")
 
     elegida = decisiones.filter(resultado_ejecucion="ELEGIDA").first()
-    mas_barata_no_factible = (
-        decisiones.filter(es_mas_barata_no_factible=True)
-        .order_by("costo_incremental_usd_tn")
-        .first()
-    )
+    bloqueadas = list(decisiones.filter(es_mas_barata_no_factible=True))
+    # El costo unitario sale de los mismos helpers que el Cost Explorer: si esta vista leyera solo
+    # `costo_incremental_usd_tn` diria "no aplica" para decisiones que el otro panel valoriza.
+    costos_bloqueados = [
+        costo
+        for costo in (costo_unitario_sin_restriccion(a) for a in bloqueadas)
+        if costo is not None
+    ]
 
     costo_restriccion = None
-    if elegida and mas_barata_no_factible:
-        elegido = elegida.costo_incremental_usd_tn
-        alternativa = mas_barata_no_factible.costo_incremental_usd_tn
-        if elegido is not None and alternativa is not None:
-            costo_restriccion = elegido - alternativa
+    if elegida is not None and costos_bloqueados:
+        elegido = costo_unitario_elegida(elegida)
+        if elegido is not None:
+            costo_restriccion = elegido - min(costos_bloqueados)
 
     return {
         "run_id": run.run_id,
@@ -269,7 +275,7 @@ def por_que(run: SimulationRun, codigo_pedido: str) -> dict:
             "alternativas_no_factibles": decisiones.filter(
                 resultado_ejecucion="NO_FACTIBLE"
             ).count(),
-            "hay_mas_barata_no_factible": mas_barata_no_factible is not None,
+            "hay_mas_barata_no_factible": bool(bloqueadas),
             "sobrecosto_de_la_restriccion_usd_tn": costo_restriccion,
             "costo_caja_usd": cargos.filter(tipo_contable=TipoContable.CAJA).aggregate(
                 total=Sum("importe_usd")
