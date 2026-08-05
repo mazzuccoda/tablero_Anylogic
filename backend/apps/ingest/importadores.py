@@ -329,12 +329,64 @@ def importar_paquete_auditoria(contenido_zip: bytes, nombre_paquete: str = "paqu
         encabezado, filas = _filas(crudo)
         for error in validar_columnas(tabla, encabezado):
             errores_estructura.append(_mensaje(ERROR, error))
+        mensajes.extend(_avisos_de_claves_repetidas(tabla, filas))
         contenidos[nombre_tabla] = (crudo, filas)
 
     if errores_estructura:
         raise ImportacionRechazada(errores_estructura)
 
+    declarados = {t.archivo for t in esquema.tablas.values()}
+    ignorados = sorted(
+        n
+        for n in archivos
+        if n not in declarados
+        and n != "esquema_auditoria.json"
+        and not n.startswith("manifiesto_auditoria_")
+    )
+    if ignorados:
+        mensajes.append(
+            _mensaje(
+                INFO,
+                f"el paquete trae archivos que el esquema no declara y no se importaron: "
+                f"{', '.join(ignorados)}",
+            )
+        )
+
     return _grabar_auditoria(esquema, manifiesto, contenidos, mensajes, nombre_paquete)
+
+
+def _avisos_de_claves_repetidas(tabla, filas: list[dict[str, str]]) -> list[dict]:
+    """Avisa si la clave que declara el esquema se repite dentro de la corrida.
+
+    Pasa en paquetes reales: el modelo reutiliza un `id_decision` cuando reevalua el mismo pedido
+    otro dia, asi que `id_alternativa` se repite. Las filas son eventos distintos y se importan
+    todas; lo que no puede es quedar en silencio, porque cualquier conteo por clave miente.
+    """
+    columnas = [c for c in tabla.clave if c != "run_id"]
+    if not columnas or not filas:
+        return []
+
+    vistas: set[tuple[str, ...]] = set()
+    repetidas: set[tuple[str, ...]] = set()
+    for fila in filas:
+        valor = tuple(texto(fila.get(c)) for c in columnas)
+        if valor in vistas:
+            repetidas.add(valor)
+        else:
+            vistas.add(valor)
+
+    if not repetidas:
+        return []
+
+    ejemplo = "/".join(sorted(repetidas)[0])
+    return [
+        _mensaje(
+            ADVERTENCIA,
+            f"{tabla.archivo}: la clave {', '.join(columnas)} que declara el esquema se repite en "
+            f"{len(repetidas)} casos (por ejemplo {ejemplo}); se importaron todas las filas",
+            tabla=tabla.tabla,
+        )
+    ]
 
 
 @transaction.atomic

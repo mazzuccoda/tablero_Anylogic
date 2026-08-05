@@ -1,3 +1,5 @@
+import logging
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -7,6 +9,8 @@ from apps.core.models import ImportBatch
 
 from .importadores import ImportacionRechazada, importar_kpis_barrido, importar_paquete_auditoria
 from .serializers import ImportBatchSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class ImportViewSet(viewsets.ReadOnlyModelViewSet):
@@ -48,6 +52,21 @@ class ImportViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(
                 {"estado": "RECHAZADA", "mensajes": exc.mensajes},
                 status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+        except Exception as exc:  # noqa: BLE001 - con DEBUG=0 el 500 llega como HTML sin causa
+            logger.exception("fallo la importacion de %s", nombre)
+            return Response(
+                {
+                    "estado": "FALLIDA",
+                    "mensajes": [
+                        {
+                            "nivel": "ERROR",
+                            "texto": f"la importacion fallo por un error inesperado: "
+                            f"{type(exc).__name__}: {exc}",
+                        }
+                    ],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         return Response(

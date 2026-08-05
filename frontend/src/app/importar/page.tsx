@@ -35,12 +35,14 @@ export default function PaginaImportar() {
     try {
       const respuesta = await fetch(`${API}/imports/upload/`, { method: "POST", body: cuerpo });
       const datos = await leerCuerpoRespuesta(respuesta);
-      if (respuesta.status === 422) {
-        setRechazo(
-          datos && typeof datos === "object" && "mensajes" in datos
-            ? (datos.mensajes as Mensaje[])
-            : [{ nivel: "ERROR", texto: detalleErrorApi(datos, respuesta.status) }],
-        );
+      const mensajes =
+        datos && typeof datos === "object" && "mensajes" in datos
+          ? (datos.mensajes as Mensaje[])
+          : null;
+      if (!respuesta.ok && mensajes) {
+        setRechazo(mensajes);
+      } else if (respuesta.status === 422) {
+        setRechazo([{ nivel: "ERROR", texto: detalleErrorApi(datos, respuesta.status) }]);
       } else if (!respuesta.ok) {
         throw new ErrorApi(respuesta.status, datos, detalleErrorApi(datos, respuesta.status));
       } else {
@@ -79,7 +81,7 @@ export default function PaginaImportar() {
 
       {rechazo ? (
         <section className="panel space-y-2">
-          <h2 className="titulo-panel">Importacion rechazada</h2>
+          <h2 className="titulo-panel">La importacion no se pudo completar</h2>
           <Avisos mensajes={rechazo} />
         </section>
       ) : null}

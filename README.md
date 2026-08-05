@@ -53,6 +53,19 @@ docker compose up -d --build
 Desde Portainer: *Stacks → Add stack → Repository*, apuntando a este repositorio, y cargar las
 mismas variables en el editor de variables de entorno del stack.
 
+### Detras de un proxy (nginx, Traefik, Cloudflare)
+
+Un paquete real es grande y la importacion es sincronica: el `Ejemplo_real.zip` de `E-00-R0`
+(2,7 MB comprimidos, 151.368 filas) tarda unos 30 s contra PostgreSQL. Si el proxy corta antes,
+el navegador muestra un 502/504 (o el HTML de error del proxy) aunque el backend siga trabajando.
+Con nginx alcanza con:
+
+```nginx
+client_max_body_size 200m;
+proxy_read_timeout 600s;
+proxy_send_timeout 600s;
+```
+
 Datos de ejemplo (corrida `E-00-R0` y un barrido de cuatro corridas):
 
 ```bash
