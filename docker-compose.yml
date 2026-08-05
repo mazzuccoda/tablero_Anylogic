@@ -34,7 +34,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-tablero}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-8000}:8001"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/"]
       interval: 15s
