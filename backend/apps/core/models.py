@@ -140,6 +140,12 @@ class FilaAuditoria(models.Model):
 
     Las columnas del CSV sin campo propio viven en `extra`: el paquete trae 97 columnas en
     `decisiones_alternativas` y descartarlas obligaria a reimportar cuando hagan falta.
+
+    Las claves que declara el esquema (por ejemplo `id_alternativa`) no son unicas en los paquetes
+    reales: el modelo reutiliza un `id_decision` en dias distintos. Por eso son indices y no
+    restricciones: la base guarda el paquete tal como lo escribio AnyLogic y el importador avisa
+    de las claves repetidas, en vez de rechazar la corrida entera. La idempotencia no depende de
+    la unicidad de fila: reimportar una corrida borra y reescribe todas sus filas.
     """
 
     extra = models.JSONField(default=dict, blank=True)
@@ -178,12 +184,8 @@ class DecisionAlternative(FilaAuditoria):
     dia_simulacion = models.FloatField(null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "id_alternativa"], name="alternativa_unica_por_corrida"
-            )
-        ]
         indexes = [
+            models.Index(fields=["simulation_run", "id_alternativa"]),
             models.Index(fields=["simulation_run", "codigo_pedido"]),
             models.Index(fields=["simulation_run", "codigo_motivo"]),
         ]
@@ -220,12 +222,10 @@ class AssignmentResult(FilaAuditoria):
     motivo_asignacion = models.CharField(max_length=120, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "id_asignacion"], name="asignacion_unica_por_corrida"
-            )
+        indexes = [
+            models.Index(fields=["simulation_run", "id_asignacion"]),
+            models.Index(fields=["simulation_run", "codigo_pedido"]),
         ]
-        indexes = [models.Index(fields=["simulation_run", "codigo_pedido"])]
 
     def __str__(self) -> str:
         return self.id_asignacion
@@ -259,12 +259,8 @@ class ArcExecution(FilaAuditoria):
     estado_final = models.CharField(max_length=60, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "id_evento_arco"], name="arco_unico_por_corrida"
-            )
-        ]
         indexes = [
+            models.Index(fields=["simulation_run", "id_evento_arco"]),
             models.Index(fields=["simulation_run", "codigo_pedido"]),
             models.Index(fields=["simulation_run", "id_asignacion"]),
             models.Index(fields=["simulation_run", "tipo_arco"]),
@@ -309,12 +305,8 @@ class CostCharge(FilaAuditoria):
     motivo = models.CharField(max_length=160, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "id_costo"], name="costo_unico_por_corrida"
-            )
-        ]
         indexes = [
+            models.Index(fields=["simulation_run", "id_costo"]),
             models.Index(fields=["simulation_run", "tipo_contable"]),
             models.Index(fields=["simulation_run", "codigo_pedido"]),
             models.Index(fields=["simulation_run", "categoria"]),
@@ -347,13 +339,10 @@ class InventorySnapshot(FilaAuditoria):
     descuadre_tn = models.FloatField(null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "dia", "ubicacion", "producto"],
-                name="inventario_unico_por_dia_ubicacion_producto",
-            )
+        indexes = [
+            models.Index(fields=["simulation_run", "dia"]),
+            models.Index(fields=["simulation_run", "ubicacion", "producto"]),
         ]
-        indexes = [models.Index(fields=["simulation_run", "dia"])]
 
     def __str__(self) -> str:
         return f"{self.ubicacion}/{self.producto} dia {self.dia}"
@@ -377,13 +366,10 @@ class ResourceCapacitySnapshot(FilaAuditoria):
     cola = models.FloatField(null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["simulation_run", "dia", "tipo_recurso", "ubicacion"],
-                name="capacidad_unica_por_dia_recurso_ubicacion",
-            )
+        indexes = [
+            models.Index(fields=["simulation_run", "tipo_recurso"]),
+            models.Index(fields=["simulation_run", "dia"]),
         ]
-        indexes = [models.Index(fields=["simulation_run", "tipo_recurso"])]
 
     def __str__(self) -> str:
         return f"{self.tipo_recurso}@{self.ubicacion} dia {self.dia}"

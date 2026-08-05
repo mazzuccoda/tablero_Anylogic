@@ -191,3 +191,43 @@ def test_el_paquete_auditado_promueve_una_corrida_ya_cargada_por_el_barrido(paqu
 def test_rechaza_un_barrido_sin_columnas_de_identidad():
     with pytest.raises(ImportacionRechazada):
         importar_kpis_barrido(b"costo_total_usd,nivel_servicio\n100,0.9\n")
+
+
+def test_importa_un_paquete_con_la_clave_declarada_repetida(carpeta_ejemplo):
+    from tests.conftest import empaquetar
+
+    # Los paquetes reales repiten id_alternativa: el modelo reusa el id_decision cuando reevalua
+    # el mismo pedido otro dia. Las filas son eventos distintos y tienen que entrar todas.
+    lineas = (carpeta_ejemplo / "decisiones_alternativas.csv").read_text().splitlines()
+    repetida = lineas[1].encode()
+    mutado = ("\n".join([*lineas, lineas[1]]) + "\n").encode()
+
+    lote = importar_paquete_auditoria(
+        empaquetar(carpeta_ejemplo, {"decisiones_alternativas.csv": mutado})
+    )
+
+    run = SimulationRun.objects.get(run_id="E-00-R0")
+    id_repetido = repetida.decode().split(",")[esquema_columna_id_alternativa(carpeta_ejemplo)]
+    assert DecisionAlternative.objects.filter(simulation_run=run).count() == 6
+    assert (
+        DecisionAlternative.objects.filter(
+            simulation_run=run, id_alternativa=id_repetido
+        ).count()
+        == 2
+    )
+    assert any("se repite" in m["texto"] for m in lote.advertencias)
+
+
+def esquema_columna_id_alternativa(carpeta) -> int:
+    encabezado = (carpeta / "decisiones_alternativas.csv").read_text().splitlines()[0]
+    return encabezado.split(",").index("id_alternativa")
+
+
+def test_avisa_de_los_archivos_que_el_esquema_no_declara(carpeta_ejemplo):
+    from tests.conftest import empaquetar
+
+    lote = importar_paquete_auditoria(
+        empaquetar(carpeta_ejemplo, {"asignaciones_capacidad.csv": b"a,b\n1,2\n"})
+    )
+
+    assert any("no se importaron" in m["texto"] for m in lote.mensajes)
