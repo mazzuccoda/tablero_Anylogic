@@ -260,14 +260,19 @@ def _instancia(tabla: str, run: SimulationRun, fila: dict[str, str]):
 def _abrir_paquete(contenido: bytes) -> dict[str, bytes]:
     """Devuelve {nombre de archivo (sin carpeta): contenido} de un zip de resultados."""
     archivos: dict[str, bytes] = {}
-    with zipfile.ZipFile(io.BytesIO(contenido)) as zf:
-        for info in zf.infolist():
-            if info.is_dir():
-                continue
-            nombre = info.filename.rsplit("/", 1)[-1]
-            if nombre.startswith("."):
-                continue
-            archivos[nombre] = zf.read(info)
+    try:
+        with zipfile.ZipFile(io.BytesIO(contenido)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                nombre = info.filename.rsplit("/", 1)[-1]
+                if nombre.startswith("."):
+                    continue
+                archivos[nombre] = zf.read(info)
+    except zipfile.BadZipFile as exc:
+        raise ImportacionRechazada(
+            [_mensaje(ERROR, "el archivo subido no es un ZIP valido")]
+        ) from exc
     return archivos
 
 
@@ -290,7 +295,10 @@ def importar_paquete_auditoria(contenido_zip: bytes, nombre_paquete: str = "paqu
         raise ImportacionRechazada(
             [_mensaje(ERROR, "el paquete no trae manifiesto_auditoria_<run_id>.json")]
         )
-    manifiesto = leer_manifiesto(archivos[manifiestos[0]])
+    try:
+        manifiesto = leer_manifiesto(archivos[manifiestos[0]])
+    except EsquemaInvalido as exc:
+        raise ImportacionRechazada([_mensaje(ERROR, str(exc))]) from exc
 
     if esquema.version_esquema != VERSION_ESQUEMA_CONOCIDA:
         mensajes.append(
