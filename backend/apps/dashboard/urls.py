@@ -17,6 +17,30 @@ urlpatterns = [
         cost_explorer.por_categoria,
     ),
     path(
+        "simulation-runs/<str:identificador>/cost-explorer/waterfall/",
+        cost_explorer.waterfall,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/by-arc/",
+        cost_explorer.por_arco,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/by-dimension/<str:dimension>/",
+        cost_explorer.por_dimension,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/by-object/<str:objeto>/",
+        cost_explorer.por_objeto,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/events/",
+        cost_explorer.eventos,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/constraints/",
+        cost_explorer.sobrecosto_por_restriccion,
+    ),
+    path(
         "simulation-runs/<str:identificador>/cost-explorer/reconciliation/",
         cost_explorer.reconciliar,
     ),

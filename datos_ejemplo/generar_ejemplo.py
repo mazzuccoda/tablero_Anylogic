@@ -522,6 +522,7 @@ def _costos() -> list[str]:
         id_costo, dia, dia_campania, tipo_contable, categoria, pedido, asignacion, cantidad,
         tarifa, importe, alcance,
     ) in definiciones:
+        sitio = "PLANTA_NORTE" if pedido == "P-0001" else "DEPOSITO_SUR"
         filas.append(
             _fila(
                 "costos_eventos",
@@ -539,9 +540,11 @@ def _costos() -> list[str]:
                     "id_lote": "L-UREA-01" if pedido == "P-0001" else "L-MAP-01",
                     "producto": "UREA" if pedido == "P-0001" else "MAP",
                     "circuito": "CIRCUITO_PLANTA" if pedido == "P-0001" else "CIRCUITO_DEPOSITO",
-                    "origen": "PLANTA_NORTE" if pedido == "P-0001" else "DEPOSITO_SUR",
-                    "destino": "TERMINAL_BAHIA",
-                    "sitio": "PLANTA_NORTE" if pedido == "P-0001" else "DEPOSITO_SUR",
+                    "origen": sitio,
+                    # El almacenamiento se devenga en el nodo: origen = destino, igual que en el
+                    # paquete real, donde los pares mas frecuentes son auto-loops del deposito.
+                    "destino": sitio if categoria == "ALMACENAMIENTO" else "TERMINAL_BAHIA",
+                    "sitio": sitio,
                     "proveedor": "PROVEEDOR_1",
                     "unidad": (
                         "USD_TN"

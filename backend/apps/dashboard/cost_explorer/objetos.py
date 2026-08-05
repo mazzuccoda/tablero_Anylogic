@@ -27,6 +27,20 @@ BASE_TN_ENTREGADAS = "tn_entregadas"
 BASE_CONTENEDORES_ENTREGADOS = "contenedores_entregados"
 BASE_PEDIDOS_CON_ENTREGA = "pedidos_con_entrega"
 
+# Objeto de costo -> columna de `costos_eventos` que lo identifica.
+CLAVE_POR_OBJETO = {
+    "lote": "id_lote",
+    "contenedor": "id_contenedor",
+    "pedido": "codigo_pedido",
+}
+
+# De donde salen las toneladas de cada objeto: cada ratio se publica con su base declarada.
+BASE_POR_CLAVE = {
+    "id_lote": "toneladas ingresadas al deposito (ejecucion_arcos PLANTA_DEPOSITO/CROSS_DOCK)",
+    "id_contenedor": "toneladas cargadas (ejecucion_arcos CARGA_CONSOLIDACION)",
+    "codigo_pedido": "toneladas_entregadas (asignaciones_elegidas)",
+}
+
 
 def _por_clave(queryset, clave: str, campo: str) -> dict[str, float]:
     filas = (

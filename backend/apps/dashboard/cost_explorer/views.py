@@ -1,8 +1,9 @@
 """Endpoints del Cost Explorer.
 
-PR-01 expone el resumen, los desgloses por etapa y por categoria, y la reconciliacion. Los demas
-niveles (producto, circuito, ubicacion, arco, pedido, decision, eventos) llegan en los PR siguientes
-sobre estos mismos filtros y agregados.
+Todos comparten el mismo recorte (`FiltrosCostos`) y devuelven `filtros_aplicados`, asi que un
+numero de la pantalla se puede reproducir con la URL. Los desgloses por objeto de costo (lote,
+contenedor, pedido) traen ademas su USD/tn con la base fisica que uso, y el sobrecosto por
+restriccion viaja aparte porque es un contrafactual y no un cargo.
 """
 
 from __future__ import annotations
@@ -13,7 +14,10 @@ from rest_framework.response import Response
 
 from apps.core.models import SimulationRun, TipoCorrida
 
-from . import agregados, reconciliacion
+from . import agregados, dimensiones, objetos, reconciliacion, restricciones
+from . import eventos as modulo_eventos
+from .dimensiones import DimensionInvalida
+from .eventos import PaginacionInvalida
 from .filtros import FiltroInvalido, FiltrosCostos
 
 
@@ -56,21 +60,30 @@ def resumen(request, identificador):
     return error or Response(agregados.resumen_costos(run, filtros))
 
 
+def _respuesta_de_filas(run, filtros, filas: list[dict], extra: dict | None = None) -> Response:
+    """Envoltorio comun de los desgloses.
+
+    Siempre viaja `filas_consideradas` junto a `importe_considerado`: un desglose vacio por filtro
+    tiene que distinguirse de un desglose vacio por falta de datos.
+    """
+    cuerpo = {
+        "run_id": run.run_id,
+        "tipo_contable": filtros.tipo_contable,
+        "filtros_aplicados": filtros.como_dict(),
+        "filas_consideradas": sum(fila.get("eventos") or 0 for fila in filas),
+        "importe_considerado": sum(fila["importe_usd"] or 0.0 for fila in filas) if filas else None,
+        "filas": filas,
+    }
+    cuerpo.update(extra or {})
+    return Response(cuerpo)
+
+
 @api_view(["GET"])
 def por_etapa(request, identificador):
     run, filtros, error = _preparar(request, identificador)
     if error:
         return error
-    filas = agregados.costos_por_etapa(run, filtros)
-    return Response(
-        {
-            "run_id": run.run_id,
-            "tipo_contable": filtros.tipo_contable,
-            "filtros_aplicados": filtros.como_dict(),
-            "importe_considerado": sum(fila["importe_usd"] or 0.0 for fila in filas),
-            "filas": filas,
-        }
-    )
+    return _respuesta_de_filas(run, filtros, agregados.costos_por_etapa(run, filtros))
 
 
 @api_view(["GET"])
@@ -78,16 +91,85 @@ def por_categoria(request, identificador):
     run, filtros, error = _preparar(request, identificador)
     if error:
         return error
-    filas = agregados.costos_por_categoria(run, filtros)
-    return Response(
+    return _respuesta_de_filas(run, filtros, agregados.costos_por_categoria(run, filtros))
+
+
+@api_view(["GET"])
+def por_dimension(request, identificador, dimension):
+    """Desglose por una columna de `costos_eventos` de la lista blanca."""
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    try:
+        filas = dimensiones.costos_por_dimension(run, filtros, dimension)
+    except DimensionInvalida as exc:
+        return Response({"detalle": str(exc)}, status=400)
+    return _respuesta_de_filas(run, filtros, filas, {"dimension": dimension})
+
+
+@api_view(["GET"])
+def por_arco(request, identificador):
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    filas = dimensiones.costos_por_arco(run, filtros)
+    return _respuesta_de_filas(run, filtros, filas, dimensiones.resumen_nodo_arco(filas))
+
+
+@api_view(["GET"])
+def por_objeto(request, identificador, objeto):
+    """Costo y USD/tn por lote, contenedor o pedido, con las toneladas fisicas del objeto."""
+    clave = objetos.CLAVE_POR_OBJETO.get(objeto)
+    if clave is None:
+        return Response(
+            {
+                "detalle": (
+                    f"objeto de costo desconocido {objeto!r}; opciones: "
+                    f"{', '.join(sorted(objetos.CLAVE_POR_OBJETO))}"
+                )
+            },
+            status=400,
+        )
+
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    filas = objetos.costo_por_objeto(run, filtros, clave)
+    return _respuesta_de_filas(
+        run,
+        filtros,
+        filas,
         {
-            "run_id": run.run_id,
-            "tipo_contable": filtros.tipo_contable,
-            "filtros_aplicados": filtros.como_dict(),
-            "importe_considerado": sum(fila["importe_usd"] or 0.0 for fila in filas),
-            "filas": filas,
-        }
+            "objeto": objeto,
+            "clave": clave,
+            "base": objetos.BASE_POR_CLAVE[clave],
+            "objetos_sin_toneladas": sum(1 for fila in filas if fila["toneladas"] is None),
+        },
     )
+
+
+@api_view(["GET"])
+def waterfall(request, identificador):
+    run, filtros, error = _preparar(request, identificador)
+    return error or Response(dimensiones.waterfall(run, filtros))
+
+
+@api_view(["GET"])
+def eventos(request, identificador):
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    try:
+        return Response(modulo_eventos.eventos(run, filtros, request.query_params))
+    except PaginacionInvalida as exc:
+        return Response({"detalle": str(exc)}, status=400)
+
+
+@api_view(["GET"])
+def sobrecosto_por_restriccion(request, identificador):
+    """Contrafactual del modelo: no lleva filtros de `costos_eventos` porque no suma cargos."""
+    run, _filtros, error = _preparar(request, identificador)
+    return error or Response(restricciones.sobrecosto_por_restriccion(run))
 
 
 @api_view(["GET"])
