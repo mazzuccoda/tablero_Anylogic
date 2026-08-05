@@ -38,6 +38,26 @@ def _numero(valor: object) -> float | None:
         return None
 
 
+def costo_unitario_elegida(alternativa: DecisionAlternative) -> float | None:
+    """Costo unitario de la alternativa que se ejecuto.
+
+    El paquete real deja `costo_incremental_usd_tn` vacio en muchas filas y publica el mismo numero
+    en `costo_elegida_usd_tn`. Vive aca y no en cada vista para que el Cost Explorer y el "por que"
+    del pedido no contesten distinto sobre la misma decision.
+    """
+    if alternativa.costo_incremental_usd_tn is not None:
+        return alternativa.costo_incremental_usd_tn
+    return _numero(alternativa.extra.get(CAMPO_COSTO_ELEGIDA))
+
+
+def costo_unitario_sin_restriccion(alternativa: DecisionAlternative) -> float | None:
+    """Costo unitario que habria tenido una alternativa descartada por una restriccion."""
+    costo = _numero(alternativa.extra.get(CAMPO_COSTO_SIN_RESTRICCION))
+    if costo is None:
+        return alternativa.costo_incremental_usd_tn
+    return costo
+
+
 def _elegidas(run: SimulationRun) -> dict[str, dict]:
     """Costo unitario y toneladas tomadas por decision, ponderando si hubo asignacion parcial."""
     elegidas: dict[str, dict] = {}
@@ -66,9 +86,7 @@ def _elegidas(run: SimulationRun) -> dict[str, dict]:
             },
         )
         toneladas = alternativa.toneladas_tomadas or 0.0
-        costo = alternativa.costo_incremental_usd_tn
-        if costo is None:
-            costo = _numero(alternativa.extra.get(CAMPO_COSTO_ELEGIDA))
+        costo = costo_unitario_elegida(alternativa)
         if costo is not None:
             datos["costo_por_tn"] += costo * toneladas
         datos["toneladas"] += toneladas
@@ -96,9 +114,7 @@ def _bloqueadas(run: SimulationRun) -> dict[str, dict]:
         "extra",
     )
     for alternativa in consulta:
-        costo = _numero(alternativa.extra.get(CAMPO_COSTO_SIN_RESTRICCION))
-        if costo is None:
-            costo = alternativa.costo_incremental_usd_tn
+        costo = costo_unitario_sin_restriccion(alternativa)
         if costo is None:
             continue
         actual = bloqueadas.get(alternativa.id_decision)

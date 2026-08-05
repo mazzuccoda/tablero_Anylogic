@@ -54,6 +54,8 @@ const FILTROS_VACIOS: Filtros = {
   dia_hasta: "",
 };
 
+const EVENTOS_POR_PAGINA = 50;
+
 const OBJETOS = [
   { objeto: "lote", clave: "id_lote", titulo: "Lote" },
   { objeto: "contenedor", clave: "id_contenedor", titulo: "Contenedor" },
@@ -74,6 +76,8 @@ interface Datos {
   objetos: FilaObjeto[];
   objetos_sin_toneladas: number;
   base_objeto: string;
+  /** Objeto al que pertenecen las filas ya cargadas: el selector puede ir un paso adelante. */
+  objeto_cargado: Objeto;
   reconciliacion: Reconciliacion;
   restricciones: Restricciones;
 }
@@ -102,7 +106,11 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
   const [objeto, setObjeto] = useState<Objeto>(OBJETOS[2]);
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [detalle, setDetalle] = useState<{ titulo: string; eventos: Eventos } | null>(null);
+  const [detalle, setDetalle] = useState<{
+    campo: string;
+    valor: string;
+    eventos: Eventos;
+  } | null>(null);
 
   const query = useMemo(() => comoQuery(aplicados), [aplicados]);
 
@@ -149,6 +157,7 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
             objetos: porObjeto.filas,
             objetos_sin_toneladas: porObjeto.objetos_sin_toneladas,
             base_objeto: porObjeto.base,
+            objeto_cargado: objeto,
             reconciliacion,
             restricciones,
           });
@@ -161,9 +170,15 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
   }, [runId, query, objeto]);
 
   const abrirDetalle = useCallback(
-    (campo: string, valor: string) => {
-      traerEventosCosto(runId, { ...query, [campo]: valor, limit: "50", orden: "importe" })
-        .then((eventos) => setDetalle({ titulo: `${campo} = ${valor}`, eventos }))
+    (campo: string, valor: string, offset = 0) => {
+      traerEventosCosto(runId, {
+        ...query,
+        [campo]: valor,
+        limit: String(EVENTOS_POR_PAGINA),
+        offset: String(offset),
+        orden: "importe",
+      })
+        .then((eventos) => setDetalle({ campo, valor, eventos }))
         .catch((e: Error) => setError(e.message));
     },
     [runId, query],
@@ -223,6 +238,9 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
 
   const { resumen, reconciliacion, restricciones } = datos;
   const vacio = resumen.filas_consideradas === 0;
+  // La tabla se dibuja con el objeto de las filas que ya llegaron, no con el del selector: si no,
+  // al cambiar de objeto quedan las filas viejas leidas con la clave nueva (todas "sin dato").
+  const cargado = datos.objeto_cargado;
 
   return (
     <div className="space-y-6">
@@ -423,7 +441,7 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
           ))}
         </div>
         <p className="mb-2 text-xs text-slate-500">
-          USD/tn de cada {objeto.titulo.toLowerCase()} = importe del objeto / {datos.base_objeto}.
+          USD/tn de cada {cargado.titulo.toLowerCase()} = importe del objeto / {datos.base_objeto}.
           {datos.objetos_sin_toneladas > 0
             ? ` ${datos.objetos_sin_toneladas} sin toneladas conocidas: se muestran "sin dato", no cero.`
             : ""}
@@ -431,7 +449,7 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
         <table className="tabla">
           <thead>
             <tr>
-              <th>{objeto.clave}</th>
+              <th>{cargado.clave}</th>
               <th className="text-right">importe</th>
               <th className="text-right">toneladas</th>
               <th className="text-right">USD/tn</th>
@@ -441,16 +459,16 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
           </thead>
           <tbody>
             {datos.objetos.slice(0, 25).map((fila) => {
-              const id = String(fila[objeto.clave] ?? "");
+              const id = String(fila[cargado.clave] ?? "");
               return (
-                <tr key={id}>
+                <tr key={`${cargado.clave}-${id}`}>
                   <td>{id || SIN_DATO}</td>
                   <td className="text-right">{usd(fila.importe_usd)}</td>
                   <td className="text-right">{numero(fila.toneladas)}</td>
                   <td className="text-right">{usd(fila.usd_por_tn)}</td>
                   <td className="text-right">{numero(fila.eventos, 0)}</td>
                   <td className="text-right">
-                    <button className="boton" onClick={() => abrirDetalle(objeto.clave, id)}>
+                    <button className="boton" onClick={() => abrirDetalle(cargado.clave, id)}>
                       eventos
                     </button>
                   </td>
@@ -584,7 +602,11 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
       </section>
 
       {detalle ? (
-        <PanelEventos detalle={detalle} onCerrar={() => setDetalle(null)} />
+        <PanelEventos
+          detalle={detalle}
+          onPagina={(offset) => abrirDetalle(detalle.campo, detalle.valor, offset)}
+          onCerrar={() => setDetalle(null)}
+        />
       ) : null}
     </div>
   );
@@ -796,23 +818,44 @@ function TablaDimension({
 
 function PanelEventos({
   detalle,
+  onPagina,
   onCerrar,
 }: {
-  detalle: { titulo: string; eventos: Eventos };
+  detalle: { campo: string; valor: string; eventos: Eventos };
+  onPagina: (offset: number) => void;
   onCerrar: () => void;
 }) {
-  const { titulo, eventos } = detalle;
+  const { campo, valor, eventos } = detalle;
+  const desde = eventos.total === 0 ? 0 : eventos.offset + 1;
+  const hasta = eventos.offset + eventos.filas.length;
   return (
     <div className="fixed inset-y-0 right-0 z-20 w-full max-w-3xl overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl">
       <div className="mb-3 flex items-baseline justify-between">
         <div>
           <h2 className="text-lg font-semibold">Eventos contables</h2>
           <p className="text-sm text-slate-500">
-            {titulo} · {numero(eventos.total, 0)} cargos, se muestran {eventos.filas.length}
+            {campo} = {valor} · {numero(eventos.total, 0)} cargos, se muestran {desde}-{hasta} por
+            importe
           </p>
         </div>
         <button className="boton" onClick={onCerrar}>
           cerrar
+        </button>
+      </div>
+      <div className="mb-2 flex gap-2">
+        <button
+          className="boton"
+          disabled={eventos.offset === 0}
+          onClick={() => onPagina(Math.max(0, eventos.offset - eventos.limit))}
+        >
+          anteriores
+        </button>
+        <button
+          className="boton"
+          disabled={hasta >= eventos.total}
+          onClick={() => onPagina(eventos.offset + eventos.limit)}
+        >
+          siguientes
         </button>
       </div>
       <table className="tabla">
@@ -822,6 +865,7 @@ function PanelEventos({
             <th className="text-right">dia</th>
             <th>etapa</th>
             <th>categoria</th>
+            <th>geografia</th>
             <th>pedido</th>
             <th>unidad</th>
             <th className="text-right">cantidad</th>
@@ -836,6 +880,9 @@ function PanelEventos({
               <td className="text-right">{numero(fila.dia)}</td>
               <td>{fila.etapa}</td>
               <td>{fila.categoria}</td>
+              <td title={`${fila.origen || SIN_DATO} → ${fila.destino || SIN_DATO}`}>
+                {fila.geografia}
+              </td>
               <td>{fila.codigo_pedido || SIN_DATO}</td>
               <td>{fila.unidad}</td>
               <td className="text-right">{numero(fila.cantidad)}</td>

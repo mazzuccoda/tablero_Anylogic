@@ -6,6 +6,7 @@ Desgloses por dimension, nodo/arco, objeto de costo, eventos paginados y sobreco
 import pytest
 from rest_framework.test import APIClient
 
+from apps.core.models import DecisionAlternative
 from apps.dashboard.cost_explorer import FiltrosCostos
 from apps.dashboard.cost_explorer.dimensiones import (
     DimensionInvalida,
@@ -162,6 +163,35 @@ def test_el_sobrecosto_se_agrega_por_restriccion(run):
     assert datos["sobrecosto_total_usd"] == pytest.approx(
         sum(fila["sobrecosto_usd"] for fila in datos["decisiones"])
     )
+
+
+def test_el_sobrecosto_del_pedido_coincide_con_el_del_por_que(run):
+    """Dos pantallas a un clic de distancia no pueden valorizar la misma restriccion distinto.
+
+    En el paquete real `costo_incremental_usd_tn` viene vacio y el par de costos vive en `extra`,
+    asi que las dos vistas comparten los helpers de `restricciones` en vez de leer un campo cada
+    una por su cuenta.
+    """
+    fila = next(f for f in sobrecosto_por_decision(run) if f["codigo_pedido"] == "P-0001")
+    porque = APIClient().get("/api/v1/orders/P-0001/why/", {"run_id": "E-00-R0"}).json()
+
+    assert porque["resumen"]["sobrecosto_de_la_restriccion_usd_tn"] == pytest.approx(
+        fila["sobrecosto_usd_tn"]
+    )
+
+
+def test_el_por_que_valoriza_la_restriccion_aunque_el_costo_venga_en_extra(run):
+    """El paquete real deja el campo vacio y publica el numero en `extra`."""
+    alternativa = DecisionAlternative.objects.filter(
+        simulation_run=run, es_mas_barata_no_factible=True, codigo_pedido="P-0001"
+    ).first()
+    alternativa.extra = dict(alternativa.extra, costo_unitario_sin_restriccion="70.0")
+    alternativa.costo_incremental_usd_tn = None
+    alternativa.save(update_fields=["extra", "costo_incremental_usd_tn"])
+
+    porque = APIClient().get("/api/v1/orders/P-0001/why/", {"run_id": "E-00-R0"}).json()
+
+    assert porque["resumen"]["sobrecosto_de_la_restriccion_usd_tn"] == pytest.approx(91.0 - 70.0)
 
 
 def test_el_sobrecosto_no_se_mezcla_con_los_importes_de_costos_eventos(api, run):
