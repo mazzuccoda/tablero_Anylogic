@@ -38,6 +38,31 @@ Tres reglas que vienen del modelo y que el código respeta:
    "sin dato", nunca como cero.
 3. `duracion_esperada_horas` negativa en `ejecucion_arcos` significa "no aplica" (esperar un
    portacontenedor o una posición no tiene techo físico), no un dato faltante.
+4. El USD/tn **no** se calcula dividiendo por la suma de `cantidad`: en el paquete real esa columna
+   viene en `USD_TN_DIA`, `USD_TN`, `USD_CONTENEDOR` y `USD_VIAJE`, y sumar las cuatro no da
+   toneladas. El denominador sale del objeto de costo (lote, contenedor, pedido) y cada ratio se
+   publica con la base que usó.
+
+## Cost Explorer
+
+Navega el costo desde el total hasta el evento contable (`docs/MOD_v3_2_Cost_Explorer.md`). Lo que
+resuelve esta versión:
+
+- **etapa logística** derivada de `categoria` con un mapa explícito. Una categoría que el modelo
+  empiece a escribir y el mapa no conozca no cae en un cajón "OTROS": aparece en
+  `categorias_sin_clasificar` y rompe una prueba;
+- **objetos de costo** con sus toneladas: lote (arco `PLANTA_DEPOSITO`, con la `cantidad` del cargo
+  `IN_DEPOSITO` como respaldo — en el paquete real las dos fuentes coinciden en los 145 lotes),
+  contenedor (arco `CARGA_CONSOLIDACION`) y pedido (`toneladas_entregadas`);
+- **reconciliación por dimensión**: `categoria`, `etapa`, `producto`, `circuito`, `origen`,
+  `destino`, `sitio` y `alcance` tienen que dar **exacto** (el contrato las escribe en toda fila) y
+  una diferencia es un bug; `codigo_pedido`, `id_asignacion` e `id_contenedor` son **parciales por
+  definición** y la API devuelve el importe que queda afuera con el motivo. Medido contra el paquete
+  real: 5.760.244,18 USD de caja, diferencia 0 en las ocho dimensiones completas y 2.646.631,84 USD
+  sin pedido (almacenamiento y flete que se devengan por lote);
+- filtros por lista blanca (no se aceptan nombres de campo libres) y `filtros_aplicados`,
+  `filas_consideradas` e `importe_considerado` en cada respuesta, para poder reproducir después un
+  número copiado a una presentación.
 
 ## Levantar el stack
 
@@ -110,6 +135,11 @@ GET    /api/v1/simulation-runs/{run_id}/capacity/
 GET    /api/v1/simulation-runs/{run_id}/decisions/
 GET    /api/v1/simulation-runs/{run_id}/export/{tabla}/    # CSV filtrado
 
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/summary/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-stage/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-category/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/reconciliation/
+
 GET    /api/v1/orders/{codigo_pedido}/why/?run_id=...      # CU-04
 POST   /api/v1/comparisons/                                # CU-05
 GET    /api/v1/sweep-kpis/
@@ -124,10 +154,11 @@ backend/            Django + DRF
   apps/core/        modelo de datos (secciones 6.1 y 6.2 del MOD)
   apps/ingest/      lectura del esquema publicado e importadores
   apps/dashboard/   agregados, vista "por que", comparador, exportación
+    cost_explorer/  clasificación de etapas, objetos de costo, filtros y reconciliación
   tests/            importación, validaciones y endpoints
 frontend/           Next.js + TypeScript + Tailwind + ECharts + TanStack Table
 datos_ejemplo/      corrida E-00-R0 y kpis_por_corrida.csv de referencia
-docs/               MOD v2.0 y notas de implementación
+docs/               MOD v2.0, MOD v3.2 (Cost Explorer) y notas de implementación
 ```
 
 ## Fuera de esta versión
