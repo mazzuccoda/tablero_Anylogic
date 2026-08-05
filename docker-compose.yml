@@ -34,7 +34,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-tablero}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${BACKEND_PORT:-8000}:8001"
+      - "${BACKEND_PORT:-8001}:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/"]
       interval: 15s
@@ -52,7 +52,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-3000}:3030"
+      - "${FRONTEND_PORT:-3030}:3000"
 
 volumes:
   datos_postgres:
