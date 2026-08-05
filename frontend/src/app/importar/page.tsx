@@ -4,7 +4,14 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { Avisos } from "@/components/Avisos";
-import { API, ErrorApi, Importacion, Mensaje } from "@/lib/api";
+import {
+  API,
+  ErrorApi,
+  Importacion,
+  Mensaje,
+  detalleErrorApi,
+  leerCuerpoRespuesta,
+} from "@/lib/api";
 
 export default function PaginaImportar() {
   const [archivo, setArchivo] = useState<File | null>(null);
@@ -27,11 +34,15 @@ export default function PaginaImportar() {
 
     try {
       const respuesta = await fetch(`${API}/imports/upload/`, { method: "POST", body: cuerpo });
-      const datos = await respuesta.json();
+      const datos = await leerCuerpoRespuesta(respuesta);
       if (respuesta.status === 422) {
-        setRechazo(datos.mensajes as Mensaje[]);
+        setRechazo(
+          datos && typeof datos === "object" && "mensajes" in datos
+            ? (datos.mensajes as Mensaje[])
+            : [{ nivel: "ERROR", texto: detalleErrorApi(datos, respuesta.status) }],
+        );
       } else if (!respuesta.ok) {
-        throw new ErrorApi(respuesta.status, datos, datos.detalle ?? "no se pudo importar");
+        throw new ErrorApi(respuesta.status, datos, detalleErrorApi(datos, respuesta.status));
       } else {
         setResultado(datos as Importacion);
       }

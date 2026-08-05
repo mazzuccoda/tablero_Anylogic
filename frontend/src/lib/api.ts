@@ -10,14 +10,48 @@ export class ErrorApi extends Error {
   }
 }
 
+export async function leerCuerpoRespuesta(respuesta: Response): Promise<unknown> {
+  const texto = await respuesta.text();
+  if (!texto) return null;
+
+  const tipoContenido = respuesta.headers.get("content-type") ?? "";
+  if (tipoContenido.includes("application/json")) {
+    return JSON.parse(texto);
+  }
+
+  try {
+    return JSON.parse(texto);
+  } catch {
+    return texto;
+  }
+}
+
+export function detalleErrorApi(cuerpo: unknown, estado: number): string {
+  if (cuerpo && typeof cuerpo === "object") {
+    const datos = cuerpo as { detalle?: unknown; detail?: unknown };
+    if (typeof datos.detalle === "string") return datos.detalle;
+    if (typeof datos.detail === "string") return datos.detail;
+  }
+
+  if (typeof cuerpo === "string") {
+    if (cuerpo.trimStart().toLowerCase().startsWith("<!doctype")) {
+      return (
+        `el servidor respondio HTML en vez de JSON (HTTP ${estado}). ` +
+        "Revisar que NEXT_PUBLIC_API_URL apunte al backend /api/v1 y que el proxy permita el tamano del ZIP."
+      );
+    }
+    return cuerpo.slice(0, 300);
+  }
+
+  return `error ${estado}`;
+}
+
 export async function pedir<T>(ruta: string, init?: RequestInit): Promise<T> {
   const respuesta = await fetch(`${API}${ruta}`, { cache: "no-store", ...init });
-  const texto = await respuesta.text();
-  const cuerpo = texto ? JSON.parse(texto) : null;
+  const cuerpo = await leerCuerpoRespuesta(respuesta);
 
   if (!respuesta.ok) {
-    const detalle =
-      (cuerpo && (cuerpo.detalle || cuerpo.detail)) || `error ${respuesta.status}`;
+    const detalle = detalleErrorApi(cuerpo, respuesta.status);
     throw new ErrorApi(respuesta.status, cuerpo, detalle);
   }
 

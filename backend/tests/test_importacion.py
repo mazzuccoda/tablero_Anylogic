@@ -75,6 +75,13 @@ def test_rechaza_un_paquete_sin_esquema(carpeta_ejemplo):
     assert "esquema_auditoria.json" in str(error.value)
 
 
+def test_rechaza_un_archivo_zip_invalido():
+    with pytest.raises(ImportacionRechazada) as error:
+        importar_paquete_auditoria(b"esto no es un zip")
+
+    assert "ZIP valido" in str(error.value)
+
+
 def test_rechaza_una_columna_faltante(carpeta_ejemplo):
     from tests.conftest import empaquetar
 
