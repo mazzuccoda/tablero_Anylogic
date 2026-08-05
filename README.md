@@ -139,6 +139,12 @@ GET    /api/v1/simulation-runs/{run_id}/cost-explorer/summary/
 GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-stage/
 GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-category/
 GET    /api/v1/simulation-runs/{run_id}/cost-explorer/reconciliation/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/waterfall/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-dimension/{dimension}/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-arc/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/by-object/{lote|contenedor|pedido}/
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/events/?limit&offset&orden
+GET    /api/v1/simulation-runs/{run_id}/cost-explorer/constraints/
 
 GET    /api/v1/orders/{codigo_pedido}/why/?run_id=...      # CU-04
 POST   /api/v1/comparisons/                                # CU-05

@@ -1,7 +1,8 @@
 "use client";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
 import { Kpi, Rejilla } from "@/components/Kpi";
 import { Tabla } from "@/components/Tabla";
@@ -64,25 +65,40 @@ const COLUMNAS_CARGOS: ColumnDef<Cargo, unknown>[] = [
 
 export default function PaginaPorQue({ params }: { params: { runId: string } }) {
   const runId = decodeURIComponent(params.runId);
-  const [pedido, setPedido] = useState("");
+  const pedidoDeLaUrl = useSearchParams().get("pedido") ?? "";
+  const [pedido, setPedido] = useState(pedidoDeLaUrl);
   const [datos, setDatos] = useState<PorQue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
 
+  const consultar = useCallback(
+    async (codigo: string) => {
+      if (!codigo.trim()) return;
+      setBuscando(true);
+      setError(null);
+      setDatos(null);
+      try {
+        setDatos(await traerPorQue(runId, codigo.trim()));
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setBuscando(false);
+      }
+    },
+    [runId],
+  );
+
+  /** `?pedido=` deja que el Cost Explorer linkee directo al pedido que encarecio la corrida. */
+  useEffect(() => {
+    if (pedidoDeLaUrl) {
+      setPedido(pedidoDeLaUrl);
+      void consultar(pedidoDeLaUrl);
+    }
+  }, [pedidoDeLaUrl, consultar]);
+
   async function buscar(evento: React.FormEvent) {
     evento.preventDefault();
-    if (!pedido.trim()) return;
-
-    setBuscando(true);
-    setError(null);
-    setDatos(null);
-    try {
-      setDatos(await traerPorQue(runId, pedido.trim()));
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBuscando(false);
-    }
+    await consultar(pedido);
   }
 
   return (

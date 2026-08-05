@@ -277,3 +277,220 @@ export const urlExportacion = (runId: string, tabla: string, filtros: Record<str
   const query = new URLSearchParams(filtros).toString();
   return `${API}/simulation-runs/${encodeURIComponent(runId)}/export/${tabla}/${query ? `?${query}` : ""}`;
 };
+
+/** Un ratio del Cost Explorer siempre viaja con la base fisica sobre la que se dividio. */
+export interface Metrica {
+  valor: number | null;
+  base: { nombre: string; valor: number | null };
+}
+
+export interface FilaDimension {
+  importe_usd: number | null;
+  eventos: number;
+  porcentaje: number | null;
+  [columna: string]: string | number | null | string[];
+}
+
+export interface RespuestaDesglose<T> {
+  run_id: string;
+  tipo_contable: string;
+  filtros_aplicados: Record<string, string | number>;
+  filas_consideradas: number;
+  importe_considerado: number | null;
+  filas: T[];
+}
+
+export interface FilaEtapa {
+  etapa: string;
+  categorias: string[];
+  importe_usd: number | null;
+  eventos: number;
+  porcentaje: number | null;
+}
+
+export interface FilaCategoria {
+  categoria: string;
+  etapa: string;
+  importe_usd: number | null;
+  eventos: number;
+  porcentaje: number | null;
+}
+
+export interface FilaArco extends FilaDimension {
+  origen: string;
+  destino: string;
+  tipo: "NODO" | "ARCO" | "GEOGRAFIA_NO_CLASIFICADA";
+}
+
+export interface FilaObjeto {
+  importe_usd: number | null;
+  eventos: number;
+  toneladas: number | null;
+  usd_por_tn: number | null;
+  id_lote?: string;
+  id_contenedor?: string;
+  codigo_pedido?: string;
+}
+
+export interface ResumenCostos {
+  run_id: string;
+  escenario: string;
+  replica: number | null;
+  tipo_contable: string;
+  importe_usd: number | null;
+  eventos: number;
+  contraparte: { tipo_contable: string; importe_usd: number | null; eventos: number };
+  usd_por_tn: Metrica;
+  usd_por_contenedor: Metrica;
+  usd_por_pedido: Metrica;
+  etapa_principal: FilaEtapa | null;
+  circuito_mas_caro: FilaDimension | null;
+  producto_mas_caro: FilaDimension | null;
+  etapa_no_clasificada_usd: number | null;
+  filtros_aplicados: Record<string, string | number>;
+  filas_consideradas: number;
+}
+
+export interface Waterfall {
+  run_id: string;
+  pasos: {
+    etapa: string;
+    categorias: string[];
+    importe_usd: number | null;
+    base: number;
+    acumulado: number;
+    porcentaje: number | null;
+    eventos: number;
+  }[];
+  total_usd: number | null;
+}
+
+export interface Eventos {
+  run_id: string;
+  orden: string;
+  limit: number;
+  offset: number;
+  total: number;
+  filas: {
+    id_costo: string;
+    dia: number | null;
+    categoria: string;
+    etapa: string;
+    geografia: string;
+    codigo_pedido: string;
+    id_contenedor: string;
+    id_lote: string;
+    producto: string;
+    circuito: string;
+    origen: string;
+    destino: string;
+    sitio: string;
+    unidad: string;
+    cantidad: number | null;
+    tarifa: number | null;
+    importe_usd: number | null;
+    motivo: string;
+  }[];
+}
+
+export interface Restricciones {
+  run_id: string;
+  sobrecosto_total_usd: number;
+  decisiones_afectadas: number;
+  definicion: string;
+  por_restriccion: {
+    codigo_motivo: string;
+    sobrecosto_usd: number;
+    toneladas: number;
+    decisiones: number;
+    pedidos: number;
+    sobrecosto_usd_tn: number | null;
+  }[];
+  decisiones: {
+    id_decision: string;
+    codigo_pedido: string;
+    producto: string;
+    circuito: string;
+    origen_elegido: string;
+    origen_bloqueado: string;
+    codigo_motivo: string;
+    detalle_motivo: string;
+    costo_elegida_usd_tn: number;
+    costo_sin_restriccion_usd_tn: number;
+    sobrecosto_usd_tn: number;
+    toneladas: number;
+    sobrecosto_usd: number;
+  }[];
+}
+
+export interface Reconciliacion {
+  run_id: string;
+  total_usd: number;
+  dimensiones: Record<
+    string,
+    {
+      suma: number;
+      diferencia: number;
+      estado: "EXACTA" | "PARCIAL" | "DESCUADRADA";
+      valores: number;
+      motivo?: string;
+      filas_con_dato?: number;
+      importe_sin_dato?: number;
+    }
+  >;
+  dimensiones_descuadradas: string[];
+  etapa_no_clasificada_usd: number | null;
+  categorias_sin_clasificar: { categoria: string; importe_usd: number | null; eventos: number }[];
+}
+
+const rutaCostos = (runId: string, recurso: string, filtros: Record<string, string> = {}) => {
+  const query = new URLSearchParams(filtros).toString();
+  return `/simulation-runs/${encodeURIComponent(runId)}/cost-explorer/${recurso}${
+    query ? `?${query}` : ""
+  }`;
+};
+
+export const traerResumenCostos = (runId: string, filtros: Record<string, string>) =>
+  pedir<ResumenCostos>(rutaCostos(runId, "summary/", filtros));
+
+export const traerWaterfall = (runId: string, filtros: Record<string, string>) =>
+  pedir<Waterfall>(rutaCostos(runId, "waterfall/", filtros));
+
+export const traerPorEtapa = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaEtapa>>(rutaCostos(runId, "by-stage/", filtros));
+
+export const traerPorCategoria = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaCategoria>>(rutaCostos(runId, "by-category/", filtros));
+
+export const traerPorDimension = (
+  runId: string,
+  dimension: string,
+  filtros: Record<string, string>,
+) =>
+  pedir<RespuestaDesglose<FilaDimension> & { dimension: string }>(
+    rutaCostos(runId, `by-dimension/${dimension}/`, filtros),
+  );
+
+export const traerPorArco = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaArco> & { nodo_usd: number; arco_usd: number }>(
+    rutaCostos(runId, "by-arc/", filtros),
+  );
+
+export const traerPorObjeto = (runId: string, objeto: string, filtros: Record<string, string>) =>
+  pedir<
+    RespuestaDesglose<FilaObjeto> & {
+      objeto: string;
+      clave: string;
+      base: string;
+      objetos_sin_toneladas: number;
+    }
+  >(rutaCostos(runId, `by-object/${objeto}/`, filtros));
+
+export const traerEventosCosto = (runId: string, filtros: Record<string, string>) =>
+  pedir<Eventos>(rutaCostos(runId, "events/", filtros));
+
+export const traerRestricciones = (runId: string) =>
+  pedir<Restricciones>(rutaCostos(runId, "constraints/"));
+
+export const traerReconciliacion = (runId: string, filtros: Record<string, string>) =>
+  pedir<Reconciliacion>(rutaCostos(runId, "reconciliation/", filtros));

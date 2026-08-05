@@ -31,9 +31,14 @@ export default function PaginaCorrida({ params }: { params: { runId: string } })
           <p className="text-sm text-slate-500">{datos.tipo}</p>
         </div>
         {datos.tiene_drill_down ? (
-          <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/porque`}>
-            ¿Por que no se cumplio un pedido?
-          </Link>
+          <div className="flex gap-2">
+            <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/costos`}>
+              Explorar costos
+            </Link>
+            <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/porque`}>
+              ¿Por que no se cumplio un pedido?
+            </Link>
+          </div>
         ) : null}
       </div>
 
