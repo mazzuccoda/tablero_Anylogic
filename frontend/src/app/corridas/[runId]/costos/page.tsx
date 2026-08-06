@@ -256,6 +256,9 @@ export default function PaginaCostos({ params }: { params: { runId: string } }) 
           <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}`}>
             volver al dashboard
           </Link>
+          <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/flujo`}>
+            flujo y almacenaje
+          </Link>
           <a
             className="boton"
             title="la exportacion filtra por columnas de costos_eventos: etapa y rango de dias no viajan"

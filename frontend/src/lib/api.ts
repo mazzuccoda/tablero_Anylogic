@@ -494,3 +494,218 @@ export const traerRestricciones = (runId: string) =>
 
 export const traerReconciliacion = (runId: string, filtros: Record<string, string>) =>
   pedir<Reconciliacion>(rutaCostos(runId, "reconciliation/", filtros));
+
+export interface EtapaFisica {
+  etapa: string;
+  toneladas: number | null;
+  arcos: number;
+  tipos_arco: string[];
+  costo_usd: number | null;
+  eventos: number;
+  categorias: string[];
+  usd_por_tn: number | null;
+}
+
+export interface Cintas {
+  run_id: string;
+  tipo_contable: string;
+  etapas: EtapaFisica[];
+  nodos: { id: string }[];
+  cintas: {
+    origen: string;
+    destino: string;
+    producto: string;
+    toneladas: number;
+    arcos: number;
+    tipos_arco: string[];
+    etapa: string;
+  }[];
+  base_cintas: string;
+  tipos_arco_no_dibujados: {
+    tipo_arco: string;
+    toneladas: number;
+    arcos: number;
+    motivo: string;
+  }[];
+  toneladas_entregadas: number | null;
+  costo_etapas_usd: number;
+  almacenamiento_excluido_usd: number | null;
+  almacenamiento_eventos: number;
+  nota: string;
+}
+
+export interface AlmacenajePorProducto {
+  run_id: string;
+  dias_de_la_corrida: number;
+  costo_almacenaje_total_usd: number | null;
+  filas: {
+    producto: string;
+    ingresos_tn: number | null;
+    egresos_tn: number | null;
+    stock_promedio_tn: number | null;
+    stock_maximo_tn: number | null;
+    dias_promedio_deposito: number | null;
+    toneladas_dia: number | null;
+    costo_almacenaje_usd: number | null;
+    eventos: number;
+    usd_por_tn_ingresada: number | null;
+    porcentaje: number | null;
+  }[];
+  base_dias: string;
+  base_egresos: string;
+  base_sitios: string;
+  depositos: string[];
+  descuadre_contra_snapshot: {
+    filas_declaradas: number;
+    declarado_usd: number | null;
+    contable_usd: number;
+    diferencia_usd?: number;
+    nota?: string;
+  };
+}
+
+export interface Deposito {
+  ubicacion: string;
+  tipo_ubicacion: string;
+  capacidad_tn: number | null;
+  stock_maximo_tn: number | null;
+  ocupacion_pico_pct: number | null;
+  productos: number;
+  costo_almacenaje_usd: number | null;
+}
+
+export interface FlujoDeposito {
+  run_id: string;
+  ubicacion: string;
+  dias_de_la_corrida: number;
+  flujo: {
+    ingresos_tn: number | null;
+    ingresos_tn_en_arcos: number | null;
+    arcos_de_ingreso: number;
+    stock_promedio_tn: number | null;
+    stock_maximo_tn: number | null;
+    capacidad_tn: number | null;
+    ocupacion_pico_pct: number | null;
+    lotes_abiertos_pico: number | null;
+    egresos_tn: number | null;
+    arcos_de_egreso: number;
+    dias_promedio_deposito: number | null;
+    base_egresos: string;
+  };
+  costo: {
+    costo_ingreso_usd: number | null;
+    costo_almacenaje_usd: number | null;
+    costo_egreso_usd: number | null;
+    costo_total_usd: number | null;
+  };
+  decision: {
+    evaluaciones: number;
+    orden_ranking_promedio: number | null;
+    elegida: number;
+    no_factible: number;
+    mas_barata_no_factible: number;
+    toneladas_tomadas: number | null;
+    motivos_de_descarte: { codigo_motivo: string; veces: number }[];
+    base_ranking: string;
+  };
+  productos: {
+    producto: string;
+    stock_promedio_tn: number | null;
+    stock_maximo_tn: number | null;
+    ingresos_tn: number | null;
+  }[];
+}
+
+export interface StockDiario {
+  run_id: string;
+  ubicacion: string;
+  productos: string[];
+  dias: number;
+  serie_diaria: {
+    dia: number;
+    producto: string;
+    stock_fisico_tn: number | null;
+    ocupacion_pct: number | null;
+  }[];
+}
+
+export interface TopLotes {
+  run_id: string;
+  orden: string;
+  lotes: {
+    id_lote: string;
+    producto: string;
+    sitio: string;
+    costo_almacenaje_usd: number | null;
+    dias_con_cargo: number;
+    dia_primer_cargo: number | null;
+    dia_ultimo_cargo: number | null;
+    toneladas: number | null;
+    usd_por_tn: number | null;
+  }[];
+  base_toneladas: string;
+}
+
+export interface RecorridoLote {
+  run_id: string;
+  id_lote: string;
+  producto: string | null;
+  sitio: string | null;
+  dia_ingreso: number | null;
+  toneladas_ingresadas: number | null;
+  toneladas_retiradas: number | null;
+  toneladas_sin_retirar: number | null;
+  costo_almacenaje_usd: number | null;
+  dias_con_cargo_de_almacenaje: number;
+  dia_primer_cargo: number | null;
+  dia_ultimo_cargo: number | null;
+  toneladas_facturadas: number | null;
+  costo_por_categoria: {
+    categoria: string;
+    importe_usd: number | null;
+    eventos: number;
+    etapa: string | null;
+  }[];
+  costo_total_usd: number | null;
+  recorrido: {
+    dia_inicio: number | null;
+    dia_fin: number | null;
+    tipo_arco: string;
+    origen: string;
+    destino: string;
+    toneladas: number | null;
+    producto: string;
+    id_contenedor: string;
+    codigo_pedido: string;
+    estado_final: string;
+  }[];
+  nota_recorrido: string;
+}
+
+const rutaCorrida = (runId: string, recurso: string, filtros: Record<string, string> = {}) => {
+  const query = new URLSearchParams(filtros).toString();
+  return `/simulation-runs/${encodeURIComponent(runId)}/${recurso}${query ? `?${query}` : ""}`;
+};
+
+export const traerCintas = (runId: string, filtros: Record<string, string>) =>
+  pedir<Cintas>(rutaCorrida(runId, "costs/cintas/", filtros));
+
+export const traerAlmacenajePorProducto = (runId: string, filtros: Record<string, string>) =>
+  pedir<AlmacenajePorProducto>(rutaCorrida(runId, "almacenamiento/por-producto/", filtros));
+
+export const traerDepositos = (runId: string) =>
+  pedir<{ run_id: string; depositos: Deposito[] }>(rutaCorrida(runId, "almacenamiento/depositos/"));
+
+export const traerFlujoDeposito = (runId: string, ubicacion: string) =>
+  pedir<FlujoDeposito>(
+    rutaCorrida(runId, `depositos/${encodeURIComponent(ubicacion)}/flujo-y-decision/`),
+  );
+
+export const traerStockDiario = (runId: string, ubicacion: string) =>
+  pedir<StockDiario>(rutaCorrida(runId, `depositos/${encodeURIComponent(ubicacion)}/stock-diario/`));
+
+export const traerTopLotes = (runId: string, filtros: Record<string, string>) =>
+  pedir<TopLotes>(rutaCorrida(runId, "almacenamiento/top-lotes/", filtros));
+
+export const traerRecorridoLote = (runId: string, idLote: string) =>
+  pedir<RecorridoLote>(rutaCorrida(runId, `lotes/${encodeURIComponent(idLote)}/recorrido/`));
