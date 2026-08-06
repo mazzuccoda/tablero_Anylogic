@@ -25,15 +25,18 @@ export default function PaginaCorrida({ params }: { params: { runId: string } })
 
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold">Corrida {datos.run_id}</h1>
           <p className="text-sm text-slate-500">{datos.tipo}</p>
         </div>
         {datos.tiene_drill_down ? (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/costos`}>
               Explorar costos
+            </Link>
+            <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/flujo`}>
+              Flujo y almacenaje
             </Link>
             <Link className="boton" href={`/corridas/${encodeURIComponent(runId)}/porque`}>
               ¿Por que no se cumplio un pedido?

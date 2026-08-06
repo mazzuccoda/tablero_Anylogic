@@ -44,6 +44,34 @@ urlpatterns = [
         "simulation-runs/<str:identificador>/cost-explorer/reconciliation/",
         cost_explorer.reconciliar,
     ),
+    path(
+        "simulation-runs/<str:identificador>/costs/cintas/",
+        cost_explorer.cintas,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/almacenamiento/por-producto/",
+        cost_explorer.almacenaje_por_producto,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/almacenamiento/depositos/",
+        cost_explorer.almacenaje_depositos,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/almacenamiento/top-lotes/",
+        cost_explorer.top_lotes,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/depositos/<str:ubicacion>/flujo-y-decision/",
+        cost_explorer.deposito_flujo_y_decision,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/depositos/<str:ubicacion>/stock-diario/",
+        cost_explorer.deposito_stock_diario,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/lotes/<str:id_lote>/recorrido/",
+        cost_explorer.recorrido_de_lote,
+    ),
     path("simulation-runs/<str:identificador>/dashboard/", views.dashboard_corrida),
     path("simulation-runs/<str:identificador>/inventory/", views.inventario_corrida),
     path("simulation-runs/<str:identificador>/costs/", views.costos_corrida),

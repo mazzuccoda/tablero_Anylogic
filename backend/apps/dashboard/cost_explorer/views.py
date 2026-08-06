@@ -13,8 +13,9 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from apps.core.models import SimulationRun, TipoCorrida
+from apps.dashboard import almacenamiento
 
-from . import agregados, dimensiones, objetos, reconciliacion, restricciones
+from . import agregados, dimensiones, flujo_fisico, objetos, reconciliacion, restricciones
 from . import eventos as modulo_eventos
 from .dimensiones import DimensionInvalida
 from .eventos import PaginacionInvalida
@@ -25,6 +26,10 @@ def _run(identificador: str) -> SimulationRun:
     if str(identificador).isdigit():
         return get_object_or_404(SimulationRun, pk=int(identificador))
     return get_object_or_404(SimulationRun, run_id=identificador)
+
+
+def _ubicaciones(run: SimulationRun) -> list[str]:
+    return sorted(fila["ubicacion"] for fila in almacenamiento.depositos(run))
 
 
 def _preparar(request, identificador: str):
@@ -176,3 +181,82 @@ def sobrecosto_por_restriccion(request, identificador):
 def reconciliar(request, identificador):
     run, filtros, error = _preparar(request, identificador)
     return error or Response(reconciliacion.reconciliar_costos(run, filtros))
+
+
+@api_view(["GET"])
+def cintas(request, identificador):
+    """Flujo fisico por etapa: toneladas de los arcos y costo de costos_eventos, sin almacenaje."""
+    run, filtros, error = _preparar(request, identificador)
+    return error or Response(flujo_fisico.cintas_por_etapa(run, filtros))
+
+
+@api_view(["GET"])
+def almacenaje_por_producto(request, identificador):
+    run, filtros, error = _preparar(request, identificador)
+    return error or Response(almacenamiento.por_producto(run, filtros))
+
+
+@api_view(["GET"])
+def almacenaje_depositos(request, identificador):
+    run, _filtros, error = _preparar(request, identificador)
+    return error or Response({"run_id": run.run_id, "depositos": almacenamiento.depositos(run)})
+
+
+@api_view(["GET"])
+def deposito_flujo_y_decision(request, identificador, ubicacion):
+    """Flujo, costo y motivo de decision de un deposito, en la misma respuesta y sin aplanarlos."""
+    run, _filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    if ubicacion not in _ubicaciones(run):
+        return Response(
+            {
+                "detalle": (
+                    f"la corrida {run.run_id} no tiene inventario en {ubicacion!r}; "
+                    f"sitios con stock: {', '.join(_ubicaciones(run))}"
+                )
+            },
+            status=404,
+        )
+    return Response(almacenamiento.flujo_y_decision(run, ubicacion))
+
+
+@api_view(["GET"])
+def deposito_stock_diario(request, identificador, ubicacion):
+    run, _filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    datos = almacenamiento.serie_diaria(run, ubicacion)
+    if not datos["serie_diaria"]:
+        return Response(
+            {"detalle": f"la corrida {run.run_id} no tiene inventario en {ubicacion!r}"}, status=404
+        )
+    return Response(datos)
+
+
+@api_view(["GET"])
+def top_lotes(request, identificador):
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    try:
+        return Response(
+            almacenamiento.top_lotes(run, filtros, request.query_params.get("orden", "costo"))
+        )
+    except almacenamiento.OrdenInvalido as exc:
+        return Response({"detalle": str(exc)}, status=400)
+
+
+@api_view(["GET"])
+def recorrido_de_lote(request, identificador, id_lote):
+    """Recorrido fisico de un lote y su costo de almacenaje."""
+    run, _filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    datos = almacenamiento.recorrido_de_lote(run, id_lote)
+    if not datos["recorrido"] and datos["costo_almacenaje_usd"] is None:
+        return Response(
+            {"detalle": f"la corrida {run.run_id} no tiene arcos ni cargos del lote {id_lote!r}"},
+            status=404,
+        )
+    return Response(datos)
