@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from apps.core.models import SimulationRun, TipoCorrida
 from apps.dashboard import almacenamiento
 
-from . import agregados, dimensiones, flujo_fisico, objetos, reconciliacion, restricciones
+from . import agregados, dimensiones, flujo_fisico, objetos, reconciliacion, restricciones, rutas
 from . import eventos as modulo_eventos
 from .dimensiones import DimensionInvalida
 from .eventos import PaginacionInvalida
@@ -92,11 +92,44 @@ def por_etapa(request, identificador):
 
 
 @api_view(["GET"])
+def por_ruta(request, identificador):
+    """ADR-T06 (MOD v6): costo y toneladas por ruta fisica derivada (secuencia de sitios de
+    `ejecucion_arcos`), no por el `circuito` declarado (que es un tipo de consolidacion, no una
+    ruta con nombre)."""
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    return _respuesta_de_filas(run, filtros, rutas.costos_por_ruta(run, filtros))
+
+
+@api_view(["GET"])
+def por_ruta_y_etapa(request, identificador):
+    """ADR-T06 (MOD v6): cruce etapa x ruta para la matriz "estrategia por producto"."""
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    return _respuesta_de_filas(run, filtros, rutas.costos_por_ruta_y_etapa(run, filtros))
+
+
+@api_view(["GET"])
 def por_categoria(request, identificador):
     run, filtros, error = _preparar(request, identificador)
     if error:
         return error
     return _respuesta_de_filas(run, filtros, agregados.costos_por_categoria(run, filtros))
+
+
+@api_view(["GET"])
+def precio_volumen(request, identificador):
+    """MOD v6: cantidad y tarifa promedio por categoria, para descomponer un cambio de importe
+    entre dos corridas en efecto precio y efecto volumen (la resta se hace en el cliente,
+    comparando dos llamadas a este mismo endpoint)."""
+    run, filtros, error = _preparar(request, identificador)
+    if error:
+        return error
+    return _respuesta_de_filas(
+        run, filtros, agregados.costos_por_categoria_con_cantidad(run, filtros)
+    )
 
 
 @api_view(["GET"])

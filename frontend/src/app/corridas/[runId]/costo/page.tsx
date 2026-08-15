@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -7,12 +8,12 @@ import { Grafico } from "@/components/Grafico";
 import { Kpi, Rejilla } from "@/components/Kpi";
 import {
   FilaDimension,
-  FilaEtapa,
   Reconciliacion,
   ResumenCostos,
   Waterfall,
   traerPorDimension,
-  traerPorEtapa,
+  traerPorRuta,
+  traerPorRutaYEtapa,
   traerReconciliacion,
   traerResumenCostos,
   traerWaterfall,
@@ -25,47 +26,67 @@ interface Datos {
   reconciliacion: Reconciliacion;
   circuitos: FilaDimension[];
   productos: FilaDimension[];
+  materiales: FilaDimension[];
 }
 
-interface MatrizCircuitos {
-  circuitos: string[];
+interface MatrizEstrategia {
+  rutas: string[];
   celdas: Record<string, Record<string, number>>;
-  totales: Record<string, number>;
+  totales: Record<string, { importe: number; toneladas: number | null; porcentajeToneladas: number | null }>;
 }
 
-const MAX_CIRCUITOS_EN_MATRIZ = 6;
+const MAX_RUTAS_EN_MATRIZ = 6;
 
 function baseDe(metrica: { base: { nombre: string; valor: number | null } }): string {
   return `base: ${metrica.base.nombre} = ${numero(metrica.base.valor)}`;
 }
 
-/** Arcos en columnas, etapa logistica en filas — la version tablero de la matriz "por circuito"
- * del Excel de referencia. Cada columna es una llamada a by-stage/ filtrada por ese circuito (el
- * mismo endpoint que ya usa la cascada), no un endpoint nuevo. El orden de las etapas es el que ya
- * devuelve el backend (ORDEN_ETAPAS), no se reordena. */
-async function matrizPorCircuito(runId: string, circuitos: FilaDimension[]): Promise<MatrizCircuitos> {
-  const top = circuitos.slice(0, MAX_CIRCUITOS_EN_MATRIZ).map((f) => String(f.circuito));
-  const porCircuito = await Promise.all(
-    top.map((circuito) => traerPorEtapa(runId, { tipo_contable: "CAJA", circuito })),
-  );
-  const celdas: Record<string, Record<string, number>> = {};
-  const totales: Record<string, number> = {};
-  top.forEach((circuito, i) => {
-    const filas: FilaEtapa[] = porCircuito[i].filas;
-    totales[circuito] = porCircuito[i].importe_considerado ?? 0;
-    for (const fila of filas) {
-      celdas[fila.etapa] ??= {};
-      celdas[fila.etapa][circuito] = fila.importe_usd ?? 0;
+/** ADR-T06 (MOD v6): la matriz "estrategia por producto" — arcos en columnas, etapa en filas,
+ * igual que la matriz del Excel de referencia. La columna ya no es el `circuito` declarado (un
+ * tipo de consolidacion de 5 valores) sino la ruta fisica real, reconstruida por el backend
+ * encadenando los sitios de ejecucion_arcos (`RUTA9→T4`, `DODERO→RUTA9→T4`...). Se filtra por
+ * material, no por producto: es la granularidad que usa el Excel real (AEL/CDL/JCCL/JCL/PCL). */
+async function matrizEstrategia(runId: string, material: string | null): Promise<MatrizEstrategia> {
+  const filtros: Record<string, string> = { tipo_contable: "CAJA" };
+  if (material) filtros.material = material;
+
+  const [porRuta, porRutaYEtapa] = await Promise.all([
+    traerPorRuta(runId, filtros),
+    traerPorRutaYEtapa(runId, filtros),
+  ]);
+
+  const top = porRuta.filas
+    .filter((f) => f.ruta !== "SIN_RUTA")
+    .slice(0, MAX_RUTAS_EN_MATRIZ)
+    .map((f) => f.ruta);
+
+  const totales: MatrizEstrategia["totales"] = {};
+  for (const fila of porRuta.filas) {
+    if (top.includes(fila.ruta)) {
+      totales[fila.ruta] = {
+        importe: fila.importe_usd ?? 0,
+        toneladas: fila.toneladas,
+        porcentajeToneladas: fila.porcentaje_toneladas,
+      };
     }
-  });
-  return { circuitos: top, celdas, totales };
+  }
+
+  const celdas: MatrizEstrategia["celdas"] = {};
+  for (const celda of porRutaYEtapa.filas) {
+    if (!top.includes(celda.ruta)) continue;
+    celdas[celda.etapa] ??= {};
+    celdas[celda.etapa][celda.ruta] = celda.importe_usd ?? 0;
+  }
+
+  return { rutas: top, celdas, totales };
 }
 
 export default function PaginaCostoNivel2({ params }: { params: { runId: string } }) {
   const runId = decodeURIComponent(params.runId);
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [matriz, setMatriz] = useState<MatrizCircuitos | null>(null);
+  const [material, setMaterial] = useState<string | null>(null);
+  const [matriz, setMatriz] = useState<MatrizEstrategia | null>(null);
   const [errorMatriz, setErrorMatriz] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,8 +98,9 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
       traerReconciliacion(runId, filtros),
       traerPorDimension(runId, "circuito", filtros),
       traerPorDimension(runId, "producto", filtros),
+      traerPorDimension(runId, "material", filtros),
     ])
-      .then(([resumen, waterfall, reconciliacion, circuitos, productos]) => {
+      .then(([resumen, waterfall, reconciliacion, circuitos, productos, materiales]) => {
         if (!vigente) return;
         setDatos({
           resumen,
@@ -86,16 +108,25 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
           reconciliacion,
           circuitos: circuitos.filas,
           productos: productos.filas,
+          materiales: materiales.filas,
         });
-        matrizPorCircuito(runId, circuitos.filas)
-          .then((m) => vigente && setMatriz(m))
-          .catch((e: Error) => vigente && setErrorMatriz(e.message));
       })
       .catch((e: Error) => vigente && setError(e.message));
     return () => {
       vigente = false;
     };
   }, [runId]);
+
+  useEffect(() => {
+    let vigente = true;
+    setErrorMatriz(null);
+    matrizEstrategia(runId, material)
+      .then((m) => vigente && setMatriz(m))
+      .catch((e: Error) => vigente && setErrorMatriz(e.message));
+    return () => {
+      vigente = false;
+    };
+  }, [runId, material]);
 
   const grafWaterfall = useMemo(() => {
     const pasos = datos?.waterfall.pasos ?? [];
@@ -132,7 +163,7 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
   if (error) return <p className="text-critico">{error}</p>;
   if (!datos) return <p className="text-slate-500">cargando...</p>;
 
-  const { resumen, waterfall, reconciliacion, circuitos, productos } = datos;
+  const { resumen, waterfall, reconciliacion, circuitos, productos, materiales } = datos;
 
   return (
     <div className="space-y-6">
@@ -274,12 +305,16 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
       </div>
 
       {errorMatriz ? (
-        <p className="text-xs text-alerta">no se pudo calcular la matriz por circuito: {errorMatriz}</p>
+        <p className="text-xs text-alerta">no se pudo calcular la matriz de estrategia: {errorMatriz}</p>
       ) : null}
 
-      {matriz && matriz.circuitos.length > 0 ? (
-        <MatrizCircuitosPanel matriz={matriz} etapasDelWaterfall={waterfall.pasos.map((p) => p.etapa)} />
-      ) : null}
+      <MatrizEstrategiaPanel
+        matriz={matriz}
+        etapasDelWaterfall={waterfall.pasos.map((p) => p.etapa)}
+        materiales={materiales}
+        materialSeleccionado={material}
+        onMaterial={setMaterial}
+      />
     </div>
   );
 }
@@ -292,63 +327,128 @@ function claseCalor(total: number, promedio: number): string {
   return "text-alerta font-semibold";
 }
 
-function MatrizCircuitosPanel({
+function MatrizEstrategiaPanel({
   matriz,
   etapasDelWaterfall,
+  materiales,
+  materialSeleccionado,
+  onMaterial,
 }: {
-  matriz: MatrizCircuitos;
+  matriz: MatrizEstrategia | null;
   etapasDelWaterfall: string[];
+  materiales: FilaDimension[];
+  materialSeleccionado: string | null;
+  onMaterial: (material: string | null) => void;
 }) {
-  const etapas = etapasDelWaterfall.filter((e) => e in matriz.celdas);
+  const etapas = (etapasDelWaterfall ?? []).filter((e) => matriz && e in matriz.celdas);
+  const rutas = matriz?.rutas ?? [];
   const promedio =
-    matriz.circuitos.reduce((s, c) => s + (matriz.totales[c] ?? 0), 0) / (matriz.circuitos.length || 1);
+    rutas.reduce((s, r) => s + (matriz?.totales[r]?.importe ?? 0), 0) / (rutas.length || 1);
 
   return (
     <section className="panel">
-      <h2 className="titulo-panel">Costo por circuito — matriz por etapa</h2>
+      <h2 className="titulo-panel">Estrategia por producto — matriz por etapa</h2>
       <p className="mb-2 text-xs text-slate-500">
-        los {matriz.circuitos.length} circuitos más caros, componentes de costo en filas. El total
-        se compara contra el promedio de estos mismos circuitos (no hay una referencia declarada
-        por el usuario en el esquema, así que no se inventa una).
+        arcos en columnas (ruta física real, no el tipo de circuito), etapa logística en filas —
+        la versión tablero de la matriz &quot;Estrategia&quot;. El total se compara contra el
+        promedio de estos mismos arcos (no hay una referencia declarada por el usuario en el
+        esquema, así que no se inventa una).
       </p>
-      <div className="overflow-x-auto">
-        <table className="tabla">
-          <thead>
-            <tr>
-              <th>USD</th>
-              {matriz.circuitos.map((c) => (
-                <th key={c} className="text-right">
-                  {c}
-                </th>
+
+      <div className="mb-3 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-slate-500">material:</span>
+        <button
+          type="button"
+          className={clsx(
+            "rounded-full border px-2.5 py-1 text-xs",
+            materialSeleccionado === null
+              ? "border-acento bg-acento/10 font-semibold text-acento"
+              : "border-slate-300 text-slate-700 hover:border-slate-400",
+          )}
+          onClick={() => onMaterial(null)}
+        >
+          todos
+        </button>
+        {materiales.map((fila) => {
+          const valor = String(fila.material);
+          return (
+            <button
+              key={valor}
+              type="button"
+              className={clsx(
+                "rounded-full border px-2.5 py-1 text-xs",
+                materialSeleccionado === valor
+                  ? "border-acento bg-acento/10 font-semibold text-acento"
+                  : "border-slate-300 text-slate-700 hover:border-slate-400",
+              )}
+              onClick={() => onMaterial(valor)}
+            >
+              {valor || SIN_DATO}
+            </button>
+          );
+        })}
+      </div>
+
+      {!matriz ? (
+        <p className="text-sm text-slate-500">cargando...</p>
+      ) : rutas.length === 0 ? (
+        <p className="text-sm text-slate-500">sin rutas físicas reconstruidas para este filtro</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>USD</th>
+                {rutas.map((r) => (
+                  <th key={r} className="text-right">
+                    {r}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {etapas.map((etapa) => (
+                <tr key={etapa}>
+                  <td>{etapa}</td>
+                  {rutas.map((r) => (
+                    <td key={r} className="text-right">
+                      {usd(matriz.celdas[etapa]?.[r] ?? 0)}
+                    </td>
+                  ))}
+                </tr>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {etapas.map((etapa) => (
-              <tr key={etapa}>
-                <td>{etapa}</td>
-                {matriz.circuitos.map((c) => (
-                  <td key={c} className="text-right">
-                    {usd(matriz.celdas[etapa]?.[c] ?? 0)}
+              <tr className="font-semibold">
+                <td>Total</td>
+                {rutas.map((r) => (
+                  <td key={r} className={`text-right ${claseCalor(matriz.totales[r]?.importe ?? 0, promedio)}`}>
+                    {usd(matriz.totales[r]?.importe ?? 0)}
                   </td>
                 ))}
               </tr>
-            ))}
-            <tr className="font-semibold">
-              <td>Total</td>
-              {matriz.circuitos.map((c) => (
-                <td key={c} className={`text-right ${claseCalor(matriz.totales[c] ?? 0, promedio)}`}>
-                  {usd(matriz.totales[c] ?? 0)}
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              <tr>
+                <td>Tn</td>
+                {rutas.map((r) => (
+                  <td key={r} className="text-right">
+                    {numero(matriz.totales[r]?.toneladas, 0)}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td>% estrategia</td>
+                {rutas.map((r) => (
+                  <td key={r} className="text-right">
+                    {porcentaje(matriz.totales[r]?.porcentajeToneladas)}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
       <p className="mt-2 text-xs text-slate-500">
-        cada columna es <code>by-stage</code> filtrado por ese circuito — el mismo endpoint que la
-        cascada de arriba. No hay toneladas por circuito en el esquema, así que la matriz queda en
-        USD, no USD/tn.
+        ruta física reconstruida encadenando <code>ejecucion_arcos</code> (ADR-T06) — no el
+        <code>circuito</code> declarado, que es un tipo de consolidación. Tn y % estrategia
+        salen de <code>asignaciones_elegidas</code>.
       </p>
     </section>
   );

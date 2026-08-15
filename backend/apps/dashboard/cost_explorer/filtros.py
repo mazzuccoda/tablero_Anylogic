@@ -19,6 +19,8 @@ CAMPOS_EXACTOS = (
     "tipo_contable",
     "categoria",
     "producto",
+    "material",
+    "proveedor",
     "circuito",
     "origen",
     "destino",

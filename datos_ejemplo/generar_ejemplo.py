@@ -60,7 +60,7 @@ ENCABEZADOS: dict[str, str] = {
     ),
     "asignaciones_elegidas": (
         "run_id,escenario,replica,id_asignacion,id_decision,id_alternativa,"
-        "codigo_pedido,producto,origen,circuito,es_cross_dock,prioridad,"
+        "codigo_pedido,producto,material,origen,circuito,es_cross_dock,prioridad,"
         "dia_asignacion,dia_primer_despacho,dia_ultima_entrega,"
         "toneladas_asignadas,toneladas_reservadas_activas,toneladas_contenerizadas,"
         "toneladas_despachadas,toneladas_entregadas,"
@@ -79,8 +79,8 @@ ENCABEZADOS: dict[str, str] = {
     ),
     "costos_eventos": (
         "run_id,escenario,replica,id_costo,dia,dia_campania,tipo_contable,categoria,"
-        "codigo_pedido,id_asignacion,id_decision,id_contenedor,id_lote,producto,circuito,"
-        "origen,destino,sitio,proveedor,unidad,cantidad,tarifa,importe_usd,id_operacion,"
+        "codigo_pedido,id_asignacion,id_decision,id_contenedor,id_lote,producto,material,"
+        "circuito,origen,destino,sitio,proveedor,unidad,cantidad,tarifa,importe_usd,id_operacion,"
         "alcance,es_incremental,motivo,fecha"
     ),
     "snapshot_inventario": (
@@ -404,6 +404,7 @@ def _asignaciones() -> list[str]:
                 "id_alternativa": "P-0001-D1-A2",
                 "codigo_pedido": "P-0001",
                 "producto": "UREA",
+                "material": "MAT_UREA",
                 "origen": "PLANTA_NORTE",
                 "circuito": "CIRCUITO_PLANTA",
                 "es_cross_dock": False,
@@ -436,6 +437,7 @@ def _asignaciones() -> list[str]:
                 "id_alternativa": "P-0002-D1-A2",
                 "codigo_pedido": "P-0002",
                 "producto": "MAP",
+                "material": "MAT_MAP",
                 "origen": "DEPOSITO_SUR",
                 "circuito": "CIRCUITO_DEPOSITO",
                 "es_cross_dock": False,
@@ -566,6 +568,7 @@ def _costos() -> list[str]:
                     "id_contenedor": "",
                     "id_lote": "L-UREA-01" if pedido == "P-0001" else "L-MAP-01",
                     "producto": "UREA" if pedido == "P-0001" else "MAP",
+                    "material": "MAT_UREA" if pedido == "P-0001" else "MAT_MAP",
                     "circuito": "CIRCUITO_PLANTA" if pedido == "P-0001" else "CIRCUITO_DEPOSITO",
                     "origen": sitio,
                     # El almacenamiento se devenga en el nodo: origen = destino, igual que en el

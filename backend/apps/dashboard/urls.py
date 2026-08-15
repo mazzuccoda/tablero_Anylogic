@@ -17,12 +17,24 @@ urlpatterns = [
         cost_explorer.por_categoria,
     ),
     path(
+        "simulation-runs/<str:identificador>/cost-explorer/price-volume/",
+        cost_explorer.precio_volumen,
+    ),
+    path(
         "simulation-runs/<str:identificador>/cost-explorer/waterfall/",
         cost_explorer.waterfall,
     ),
     path(
         "simulation-runs/<str:identificador>/cost-explorer/by-arc/",
         cost_explorer.por_arco,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/by-route/",
+        cost_explorer.por_ruta,
+    ),
+    path(
+        "simulation-runs/<str:identificador>/cost-explorer/by-route-stage/",
+        cost_explorer.por_ruta_y_etapa,
     ),
     path(
         "simulation-runs/<str:identificador>/cost-explorer/by-dimension/<str:dimension>/",

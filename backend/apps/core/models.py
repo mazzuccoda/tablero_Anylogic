@@ -212,6 +212,8 @@ class AssignmentResult(FilaAuditoria):
     id_alternativa = models.CharField(max_length=80, blank=True)
     codigo_pedido = models.CharField(max_length=80, blank=True)
     producto = models.CharField(max_length=80, blank=True)
+    # ADR-T05 (MOD v6): idem CostCharge.material.
+    material = models.CharField(max_length=80, blank=True)
     origen = models.CharField(max_length=80, blank=True)
     circuito = models.CharField(max_length=80, blank=True)
     dia_asignacion = models.FloatField(null=True, blank=True)
@@ -303,6 +305,11 @@ class CostCharge(FilaAuditoria):
     id_contenedor = models.CharField(max_length=80, blank=True)
     id_lote = models.CharField(max_length=80, blank=True)
     producto = models.CharField(max_length=80, blank=True)
+    # ADR-T05 (MOD v6): declarados en esquema_auditoria.json desde siempre, pero sin campo propio
+    # caian en `extra`. Los pedidos de la matriz "estrategia por producto" y el explorador
+    # necesitan filtrar por ellos, asi que se promueven a columna.
+    material = models.CharField(max_length=80, blank=True)
+    proveedor = models.CharField(max_length=80, blank=True)
     circuito = models.CharField(max_length=80, blank=True)
     origen = models.CharField(max_length=80, blank=True)
     destino = models.CharField(max_length=80, blank=True)
