@@ -213,7 +213,7 @@ function CorridaAuditada({
         <NivelUno runId={runId} datos={datos} />
       </div>
 
-      <div>
+      <div id="servicio-y-cumplimiento">
         <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Servicio y cumplimiento
         </h2>
@@ -470,6 +470,7 @@ function NivelUno({ runId, datos }: { runId: string; datos: Dashboard }) {
         estado={estadoServicio(datos.servicio?.nivel_servicio ?? null)}
         serie={serie?.map((p) => p.nivel_servicio)}
         delta={textoDelta(varServicio, "pp", anterior?.run_id)}
+        href="#servicio-y-cumplimiento"
       />
       <TarjetaEstado
         titulo="Costo"
@@ -478,6 +479,7 @@ function NivelUno({ runId, datos }: { runId: string; datos: Dashboard }) {
         estado={estadoCosto(varCosto)}
         serie={serie?.map((p) => p.costo_usd_tn)}
         delta={textoDelta(varCosto, "%", anterior?.run_id)}
+        href={`/corridas/${encodeURIComponent(runId)}/costo`}
       />
       <TarjetaEstado
         titulo="Restricción"
@@ -486,6 +488,7 @@ function NivelUno({ runId, datos }: { runId: string; datos: Dashboard }) {
         estado={estadoRestriccion(datos.restriccion?.mas_baratas_no_factibles ?? null)}
         serie={serie?.map((p) => p.sobrecosto_total_usd)}
         delta={textoDelta(varSobrecosto, "% sobrecosto", anterior?.run_id)}
+        href={`/corridas/${encodeURIComponent(runId)}/restricciones`}
       />
       <TarjetaEstado
         titulo="Capacidad e inventario"
@@ -494,6 +497,7 @@ function NivelUno({ runId, datos }: { runId: string; datos: Dashboard }) {
         estado={estadoCapacidad(tieneUso ? usoPico : null)}
         serie={serie?.map((p) => p.uso_pico_pct)}
         delta={textoDelta(varUso, "pp", anterior?.run_id)}
+        href={`/corridas/${encodeURIComponent(runId)}/almacenaje`}
       />
     </Rejilla>
   );
