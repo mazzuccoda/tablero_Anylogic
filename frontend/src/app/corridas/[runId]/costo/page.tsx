@@ -22,6 +22,7 @@ interface Datos {
   waterfall: Waterfall;
   reconciliacion: Reconciliacion;
   circuitos: FilaDimension[];
+  productos: FilaDimension[];
 }
 
 function baseDe(metrica: { base: { nombre: string; valor: number | null } }): string {
@@ -41,9 +42,17 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
       traerWaterfall(runId, filtros),
       traerReconciliacion(runId, filtros),
       traerPorDimension(runId, "circuito", filtros),
+      traerPorDimension(runId, "producto", filtros),
     ])
-      .then(([resumen, waterfall, reconciliacion, circuitos]) => {
-        if (vigente) setDatos({ resumen, waterfall, reconciliacion, circuitos: circuitos.filas });
+      .then(([resumen, waterfall, reconciliacion, circuitos, productos]) => {
+        if (vigente)
+          setDatos({
+            resumen,
+            waterfall,
+            reconciliacion,
+            circuitos: circuitos.filas,
+            productos: productos.filas,
+          });
       })
       .catch((e: Error) => vigente && setError(e.message));
     return () => {
@@ -86,7 +95,7 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
   if (error) return <p className="text-critico">{error}</p>;
   if (!datos) return <p className="text-slate-500">cargando...</p>;
 
-  const { resumen, waterfall, reconciliacion, circuitos } = datos;
+  const { resumen, waterfall, reconciliacion, circuitos, productos } = datos;
 
   return (
     <div className="space-y-6">
@@ -121,45 +130,77 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
         </p>
       </section>
 
+      <section className="panel">
+        <h2 className="titulo-panel">Reconciliación</h2>
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>dimensión</th>
+              <th className="text-right">diferencia</th>
+              <th>estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(reconciliacion.dimensiones).map(([dimension, fila]) => (
+              <tr key={dimension}>
+                <td>{dimension}</td>
+                <td className="text-right">{usd(fila.diferencia)}</td>
+                <td
+                  className={
+                    fila.estado === "DESCUADRADA"
+                      ? "text-critico"
+                      : fila.estado === "PARCIAL"
+                        ? "text-alerta"
+                        : undefined
+                  }
+                >
+                  {fila.estado}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {reconciliacion.categorias_sin_clasificar.length > 0 ? (
+          <p className="mt-2 text-xs text-alerta">
+            categorías sin clasificar:{" "}
+            {reconciliacion.categorias_sin_clasificar
+              .map((c) => `${c.categoria || SIN_DATO} (${usd(c.importe_usd)})`)
+              .join(", ")}
+          </p>
+        ) : null}
+      </section>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section className="panel">
-          <h2 className="titulo-panel">Reconciliación</h2>
+          <h2 className="titulo-panel">Apertura por material</h2>
           <table className="tabla">
             <thead>
               <tr>
-                <th>dimensión</th>
-                <th className="text-right">diferencia</th>
-                <th>estado</th>
+                <th>producto</th>
+                <th className="text-right">importe</th>
+                <th className="text-right">%</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(reconciliacion.dimensiones).map(([dimension, fila]) => (
-                <tr key={dimension}>
-                  <td>{dimension}</td>
-                  <td className="text-right">{usd(fila.diferencia)}</td>
-                  <td
-                    className={
-                      fila.estado === "DESCUADRADA"
-                        ? "text-critico"
-                        : fila.estado === "PARCIAL"
-                          ? "text-alerta"
-                          : undefined
-                    }
-                  >
-                    {fila.estado}
-                  </td>
+              {productos.slice(0, 8).map((fila) => (
+                <tr key={String(fila.producto)}>
+                  <td>{String(fila.producto) || SIN_DATO}</td>
+                  <td className="text-right">{usd(fila.importe_usd)}</td>
+                  <td className="text-right">{porcentaje(fila.porcentaje)}</td>
                 </tr>
               ))}
+              {productos.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="py-4 text-center text-slate-500">
+                    sin datos de producto
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
-          {reconciliacion.categorias_sin_clasificar.length > 0 ? (
-            <p className="mt-2 text-xs text-alerta">
-              categorías sin clasificar:{" "}
-              {reconciliacion.categorias_sin_clasificar
-                .map((c) => `${c.categoria || SIN_DATO} (${usd(c.importe_usd)})`)
-                .join(", ")}
-            </p>
-          ) : null}
+          <p className="mt-2 text-xs text-slate-500">
+            filtro por producto, ranking completo y drill-down en el explorador de nivel 3.
+          </p>
         </section>
 
         <section className="panel">
