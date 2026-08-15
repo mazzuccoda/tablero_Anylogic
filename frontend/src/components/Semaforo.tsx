@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { COLOR_ESTADO, Estado, ETIQUETA_ESTADO } from "@/lib/semaforo";
 
 export function PildoraEstado({ estado }: { estado: Estado }) {
@@ -60,6 +62,7 @@ export function TarjetaEstado({
   estado,
   serie,
   delta,
+  href,
 }: {
   titulo: string;
   valor: string;
@@ -67,9 +70,11 @@ export function TarjetaEstado({
   estado: Estado;
   serie?: (number | null)[];
   delta?: string;
+  /** Si viene, la tarjeta entera es un link al desglose (nivel 2) del indicador. */
+  href?: string;
 }) {
-  return (
-    <div className="panel relative pr-4">
+  const contenido = (
+    <div className={`panel relative pr-4 ${href ? "transition hover:border-acento hover:shadow-sm" : ""}`}>
       <div className="absolute right-4 top-4">
         <PildoraEstado estado={estado} />
       </div>
@@ -78,6 +83,13 @@ export function TarjetaEstado({
       {detalle ? <div className="mt-1 text-xs text-slate-500">{detalle}</div> : null}
       {serie ? <Sparkline valores={serie} estado={estado} /> : null}
       {delta ? <div className="mt-1 text-xs font-medium text-slate-600">{delta}</div> : null}
+      {href ? <div className="mt-2 text-xs font-medium text-acento">ver desglose →</div> : null}
     </div>
+  );
+  if (!href) return contenido;
+  return (
+    <Link href={href} className="block">
+      {contenido}
+    </Link>
   );
 }
