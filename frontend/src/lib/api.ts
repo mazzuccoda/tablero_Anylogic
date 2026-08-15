@@ -345,6 +345,40 @@ export interface FilaArco extends FilaDimension {
   tipo: "NODO" | "ARCO" | "GEOGRAFIA_NO_CLASIFICADA";
 }
 
+/** ADR-T06 (MOD v6): ruta fisica derivada de ejecucion_arcos ("RUTA9→T4"), no el `circuito`
+ * declarado (que es un tipo de consolidacion de 5 valores, no un nombre de trayecto). */
+export interface FilaRuta {
+  ruta: string;
+  importe_usd: number | null;
+  eventos: number;
+  porcentaje: number | null;
+  toneladas: number | null;
+  porcentaje_toneladas: number | null;
+}
+
+/** ADR-T06: una celda de la matriz "estrategia por producto" (etapa x ruta). */
+export interface FilaRutaEtapa {
+  ruta: string;
+  etapa: string;
+  importe_usd: number | null;
+  eventos: number;
+}
+
+/** MOD v6: cantidad y tarifa promedio ponderada por categoria, para descomponer un cambio de
+ * costo entre dos corridas en efecto precio y efecto volumen. Solo tiene sentido a nivel
+ * categoria (cada una tiene una unica `unidad`) — nunca a nivel de una dimension como circuito o
+ * producto, que mezclan unidades distintas. */
+export interface FilaCategoriaCantidad {
+  categoria: string;
+  etapa: string;
+  unidad: string;
+  cantidad: number | null;
+  tarifa_promedio: number | null;
+  importe_usd: number | null;
+  eventos: number;
+  porcentaje: number | null;
+}
+
 export interface FilaObjeto {
   importe_usd: number | null;
   eventos: number;
@@ -498,6 +532,15 @@ export const traerPorArco = (runId: string, filtros: Record<string, string>) =>
   pedir<RespuestaDesglose<FilaArco> & { nodo_usd: number; arco_usd: number }>(
     rutaCostos(runId, "by-arc/", filtros),
   );
+
+export const traerPorRuta = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaRuta>>(rutaCostos(runId, "by-route/", filtros));
+
+export const traerPorRutaYEtapa = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaRutaEtapa>>(rutaCostos(runId, "by-route-stage/", filtros));
+
+export const traerPrecioVolumen = (runId: string, filtros: Record<string, string>) =>
+  pedir<RespuestaDesglose<FilaCategoriaCantidad>>(rutaCostos(runId, "price-volume/", filtros));
 
 export const traerPorObjeto = (runId: string, objeto: string, filtros: Record<string, string>) =>
   pedir<

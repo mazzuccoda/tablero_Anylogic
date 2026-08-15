@@ -24,7 +24,17 @@ from .agregados import (
 from .clasificacion import ARCO, NODO, tipo_geografia
 from .filtros import FiltrosCostos
 
-DIMENSIONES = ("producto", "circuito", "sitio", "origen", "destino", "alcance", "unidad", "motivo")
+DIMENSIONES = (
+    "producto",
+    "material",
+    "circuito",
+    "sitio",
+    "origen",
+    "destino",
+    "alcance",
+    "unidad",
+    "motivo",
+)
 
 
 class DimensionInvalida(ValueError):

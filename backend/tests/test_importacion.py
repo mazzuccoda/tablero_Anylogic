@@ -64,6 +64,54 @@ def test_importa_la_fecha_calendario_de_la_campania(paquete):
     assert asignacion.fecha_asignacion == date(2026, 4, 2)
 
 
+def test_material_y_proveedor_son_campos_propios_no_extra(paquete):
+    """ADR-T05 (MOD v6): declarados en el esquema desde siempre, ahora tienen columna propia en
+    vez de caer en `extra` — filtrables en el Cost Explorer."""
+    importar_paquete_auditoria(paquete)
+
+    costo = CostCharge.objects.get(id_costo="C-0001")
+    assert costo.material == "MAT_UREA"
+    assert costo.proveedor == "PROVEEDOR_1"
+    assert "material" not in costo.extra
+    assert "proveedor" not in costo.extra
+
+    asignacion = AssignmentResult.objects.get(id_asignacion="A-0002")
+    assert asignacion.material == "MAT_MAP"
+    assert "material" not in asignacion.extra
+
+
+def test_la_migracion_de_datos_promueve_material_y_proveedor_desde_extra(paquete):
+    """ADR-T05: una corrida importada antes de este cambio tiene material/proveedor solo en
+    `extra` (import viejo). La migracion de datos los copia a la columna nueva sin reimportar
+    nada — se prueba simulando ese estado viejo sobre una corrida ya importada."""
+    import importlib
+
+    from django.apps import apps as app_registry
+
+    importar_paquete_auditoria(paquete)
+
+    costo = CostCharge.objects.get(id_costo="C-0001")
+    costo.extra = {**costo.extra, "material": costo.material, "proveedor": costo.proveedor}
+    costo.material = ""
+    costo.proveedor = ""
+    costo.save()
+
+    asignacion = AssignmentResult.objects.get(id_asignacion="A-0002")
+    asignacion.extra = {**asignacion.extra, "material": asignacion.material}
+    asignacion.material = ""
+    asignacion.save()
+
+    migracion = importlib.import_module("apps.core.migrations.0004_material_proveedor_adr_t05")
+    migracion._promover_desde_extra(app_registry, None)
+
+    costo.refresh_from_db()
+    assert costo.material == "MAT_UREA"
+    assert costo.proveedor == "PROVEEDOR_1"
+
+    asignacion.refresh_from_db()
+    assert asignacion.material == "MAT_MAP"
+
+
 def test_una_tabla_que_no_declara_fecha_la_deja_en_none(carpeta_ejemplo):
     """Una tabla sin la columna en su esquema no inventa una fecha: queda None (ADR-T01)."""
     from tests.conftest import empaquetar

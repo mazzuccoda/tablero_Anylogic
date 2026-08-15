@@ -62,6 +62,29 @@ def costos_por_categoria(run: SimulationRun, filtros: FiltrosCostos) -> list[dic
     return filas
 
 
+def costos_por_categoria_con_cantidad(run: SimulationRun, filtros: FiltrosCostos) -> list[dict]:
+    """Precio x volumen (MOD v6): `cantidad` solo se suma a nivel `categoria`, nunca a nivel de
+    una dimension libre como `circuito` o `producto` — ahi una categoria mezcla `unidad`
+    distintas (USD_TN, USD_CONTENEDOR, USD_VIAJE...) y sumar cantidades de unidades distintas no
+    significa nada. Por eso esta funcion no reusa `_agrupar` y no se expone como una dimension
+    mas: existe solo para este calculo.
+    """
+    filas = list(
+        cargos_filtrados(run, filtros)
+        .values("categoria", "unidad")
+        .annotate(importe_usd=Sum("importe_usd"), cantidad=Sum("cantidad"), eventos=Count("id"))
+        .order_by("-importe_usd")
+    )
+    filas = _etiquetar_sin_dato(filas, "categoria")
+    for fila in filas:
+        fila["etapa"] = clasificar_etapa(fila["categoria"])
+        cantidad = fila["cantidad"]
+        fila["tarifa_promedio"] = (
+            fila["importe_usd"] / cantidad if cantidad and fila["importe_usd"] is not None else None
+        )
+    return filas
+
+
 def costos_por_etapa(run: SimulationRun, filtros: FiltrosCostos) -> list[dict]:
     """Pliega categoria en etapa conservando de que categorias vino cada etapa."""
     total = total_filtrado(run, filtros)

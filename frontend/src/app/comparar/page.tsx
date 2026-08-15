@@ -8,11 +8,13 @@ import {
   Comparacion,
   Corrida,
   Dashboard,
+  FilaCategoriaCantidad,
   FilaEtapa,
   comparar,
   listarCorridas,
   traerDashboard,
   traerPorEtapa,
+  traerPrecioVolumen,
   traerRestricciones,
 } from "@/lib/api";
 import { fecha, numero, porcentaje, SIN_DATO, usd } from "@/lib/formato";
@@ -62,6 +64,67 @@ function pasosDeCascada(filasA: FilaEtapa[], filasB: FilaEtapa[]): PasoCascada[]
   });
 }
 
+interface DecomposicionPV {
+  categoria: string;
+  unidad: string;
+  cantidadA: number | null;
+  tarifaA: number | null;
+  importeA: number | null;
+  cantidadB: number | null;
+  tarifaB: number | null;
+  importeB: number | null;
+  efectoPrecio: number | null;
+  efectoVolumen: number | null;
+}
+
+/** MOD v6: efecto precio + efecto volumen cierra exacto contra la diferencia de importe, sin
+ * residuo — descomposicion secuencial (volumen a la tarifa vieja, precio al volumen nuevo).
+ * Solo tiene sentido por categoria (cada una con una unica `unidad`), nunca mezclando categorias
+ * con unidades distintas (USD_TN, USD_CONTENEDOR...). */
+function descomposicionPrecioVolumen(
+  filasA: FilaCategoriaCantidad[],
+  filasB: FilaCategoriaCantidad[],
+): DecomposicionPV[] {
+  const porA = new Map(filasA.map((f) => [f.categoria, f]));
+  const porB = new Map(filasB.map((f) => [f.categoria, f]));
+  const categorias = new Set([...porA.keys(), ...porB.keys()]);
+
+  const filas: DecomposicionPV[] = [];
+  for (const categoria of categorias) {
+    const fa = porA.get(categoria) ?? null;
+    const fb = porB.get(categoria) ?? null;
+    const cantidadA = fa?.cantidad ?? null;
+    const tarifaA = fa?.tarifa_promedio ?? null;
+    const cantidadB = fb?.cantidad ?? null;
+    const tarifaB = fb?.tarifa_promedio ?? null;
+
+    let efectoPrecio: number | null = null;
+    let efectoVolumen: number | null = null;
+    if (cantidadA !== null && tarifaA !== null && cantidadB !== null && tarifaB !== null) {
+      efectoPrecio = (tarifaB - tarifaA) * cantidadB;
+      efectoVolumen = (cantidadB - cantidadA) * tarifaA;
+    }
+
+    filas.push({
+      categoria,
+      unidad: fa?.unidad ?? fb?.unidad ?? "",
+      cantidadA,
+      tarifaA,
+      importeA: fa?.importe_usd ?? null,
+      cantidadB,
+      tarifaB,
+      importeB: fb?.importe_usd ?? null,
+      efectoPrecio,
+      efectoVolumen,
+    });
+  }
+  filas.sort(
+    (x, y) =>
+      Math.abs((y.importeB ?? 0) - (y.importeA ?? 0)) - Math.abs((x.importeB ?? 0) - (x.importeA ?? 0)),
+  );
+  return filas;
+}
+
 interface ResumenAuditado {
   run_id: string;
   nivel_servicio: number | null;
@@ -98,6 +161,9 @@ export default function PaginaComparar() {
   const [errorCascada, setErrorCascada] = useState<string | null>(null);
   const [totales, setTotales] = useState<{ a: number | null; b: number | null } | null>(null);
   const [fallback, setFallback] = useState<{ a: ResumenAuditado; b: ResumenAuditado } | null>(null);
+  const [precioVolumen, setPrecioVolumen] = useState<DecomposicionPV[] | null>(null);
+  const [errorPrecioVolumen, setErrorPrecioVolumen] = useState<string | null>(null);
+  const [categoriaPV, setCategoriaPV] = useState<string | null>(null);
 
   useEffect(() => {
     listarCorridas()
@@ -122,6 +188,9 @@ export default function PaginaComparar() {
     setErrorCascada(null);
     setTotales(null);
     setFallback(null);
+    setPrecioVolumen(null);
+    setErrorPrecioVolumen(null);
+    setCategoriaPV(null);
     let sinKpis = false;
     try {
       const r = await comparar(a, b);
@@ -143,6 +212,21 @@ export default function PaginaComparar() {
         setTotales({ a: porEtapaA.importe_considerado, b: porEtapaB.importe_considerado });
       } catch (e) {
         setErrorCascada((e as Error).message);
+      }
+      try {
+        const filtros = { tipo_contable: "CAJA" };
+        const [pvA, pvB] = await Promise.all([
+          traerPrecioVolumen(a, filtros),
+          traerPrecioVolumen(b, filtros),
+        ]);
+        const filas = descomposicionPrecioVolumen(pvA.filas, pvB.filas);
+        setPrecioVolumen(filas);
+        // preferir una fila con datos completos en las dos corridas: la de mayor diferencia
+        // puede ser una categoria que solo existe en una (nada que puentear todavia)
+        const conAmbosLados = filas.find((f) => f.importeA !== null && f.importeB !== null);
+        setCategoriaPV((conAmbosLados ?? filas[0])?.categoria ?? null);
+      } catch (e) {
+        setErrorPrecioVolumen((e as Error).message);
       }
     }
     if (sinKpis && ambasAuditadas) {
@@ -216,6 +300,64 @@ export default function PaginaComparar() {
       ],
     };
   }, [cascada, totales, a, b]);
+
+  const filaPV = precioVolumen?.find((f) => f.categoria === categoriaPV) ?? null;
+
+  const grafPrecioVolumen = useMemo(() => {
+    if (!filaPV || filaPV.importeA === null || filaPV.importeB === null) return null;
+    const efectoPrecio = filaPV.efectoPrecio ?? 0;
+    const efectoVolumen = filaPV.efectoVolumen ?? 0;
+    const acumuladoPrecio = filaPV.importeA + efectoPrecio;
+    const categorias = ["base", "precio", "volumen", "resultado"];
+    const base = [
+      0,
+      Math.min(filaPV.importeA, acumuladoPrecio),
+      Math.min(acumuladoPrecio, filaPV.importeB),
+      0,
+    ];
+    const valores = [
+      { value: filaPV.importeA, color: "#3c4a8f" },
+      { value: Math.abs(efectoPrecio), color: efectoPrecio >= 0 ? "#b91c1c" : "#15803d" },
+      { value: Math.abs(efectoVolumen), color: efectoVolumen >= 0 ? "#b91c1c" : "#15803d" },
+      { value: filaPV.importeB, color: "#3c4a8f" },
+    ];
+    return {
+      tooltip: {
+        trigger: "axis" as const,
+        axisPointer: { type: "shadow" as const },
+        formatter: (params: unknown) => {
+          const p = (params as { dataIndex: number }[])[0];
+          const etiquetas = [
+            `base (${a}): ${usd(filaPV.importeA)}`,
+            `efecto precio: ${usd(efectoPrecio)}`,
+            `efecto volumen: ${usd(efectoVolumen)}`,
+            `resultado (${b}): ${usd(filaPV.importeB)}`,
+          ];
+          return etiquetas[p.dataIndex];
+        },
+      },
+      grid: { left: 8, right: 16, bottom: 8, top: 16, containLabel: true },
+      xAxis: { type: "category" as const, data: categorias },
+      yAxis: { type: "value" as const, name: "USD" },
+      series: [
+        {
+          name: "base",
+          type: "bar" as const,
+          stack: "pv",
+          itemStyle: { color: "transparent" },
+          emphasis: { itemStyle: { color: "transparent" } },
+          tooltip: { show: false },
+          data: base,
+        },
+        {
+          name: "importe",
+          type: "bar" as const,
+          stack: "pv",
+          data: valores.map((v) => ({ value: v.value, itemStyle: { color: v.color } })),
+        },
+      ],
+    };
+  }, [filaPV, a, b]);
 
   return (
     <div className="space-y-6">
@@ -361,6 +503,70 @@ export default function PaginaComparar() {
             de total {a} a total {b}, paso a paso por etapa: rojo suma, verde resta. Orden
             logistico, no por magnitud.
           </p>
+        </section>
+      ) : null}
+
+      {errorPrecioVolumen ? (
+        <p className="text-xs text-alerta">no se pudo calcular precio x volumen: {errorPrecioVolumen}</p>
+      ) : null}
+
+      {precioVolumen && precioVolumen.length > 0 ? (
+        <section className="panel">
+          <h2 className="titulo-panel">Precio x volumen, por categoria (solo caja)</h2>
+          <p className="mb-2 text-xs text-slate-500">
+            si el importe cambio, ¿fue porque cambio la tarifa negociada o porque se movio mas o
+            menos volumen? <code>efecto_precio + efecto_volumen</code> cierra exacto contra la
+            diferencia de importe, sin residuo.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>categoria</th>
+                  <th>unidad</th>
+                  <th className="text-right">cantidad {a}</th>
+                  <th className="text-right">cantidad {b}</th>
+                  <th className="text-right">tarifa {a}</th>
+                  <th className="text-right">tarifa {b}</th>
+                  <th className="text-right">efecto precio</th>
+                  <th className="text-right">efecto volumen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {precioVolumen.slice(0, 10).map((fila) => (
+                  <tr
+                    key={fila.categoria}
+                    className={clsx(
+                      "cursor-pointer",
+                      fila.categoria === categoriaPV && "bg-acento/5",
+                    )}
+                    onClick={() => setCategoriaPV(fila.categoria)}
+                  >
+                    <td>{fila.categoria}</td>
+                    <td className="text-xs text-slate-500">{fila.unidad || SIN_DATO}</td>
+                    <td className="text-right">{numero(fila.cantidadA)}</td>
+                    <td className="text-right">{numero(fila.cantidadB)}</td>
+                    <td className="text-right">{numero(fila.tarifaA)}</td>
+                    <td className="text-right">{numero(fila.tarifaB)}</td>
+                    <td className="text-right">
+                      {fila.efectoPrecio === null ? SIN_DATO : usd(fila.efectoPrecio)}
+                    </td>
+                    <td className="text-right">
+                      {fila.efectoVolumen === null ? SIN_DATO : usd(fila.efectoVolumen)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">click en una fila para ver su cascada abajo</p>
+
+          {grafPrecioVolumen ? (
+            <div className="mt-4">
+              <h3 className="mb-1 text-sm font-semibold">{categoriaPV}</h3>
+              <Grafico opcion={grafPrecioVolumen} alto={260} />
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>
