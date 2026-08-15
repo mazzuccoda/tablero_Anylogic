@@ -11,6 +11,7 @@ const config: Config = {
         acento: "#0f766e",
         alerta: "#b45309",
         critico: "#b91c1c",
+        ok: "#15803d",
       },
     },
   },

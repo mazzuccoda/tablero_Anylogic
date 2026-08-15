@@ -6,8 +6,17 @@ import { useEffect, useMemo, useState } from "react";
 import { Avisos } from "@/components/Avisos";
 import { Grafico } from "@/components/Grafico";
 import { Kpi, Rejilla } from "@/components/Kpi";
-import { AgruparPor, Dashboard, traerDashboard, urlExportacion } from "@/lib/api";
-import { horas, numero, porcentaje, usd } from "@/lib/formato";
+import { TarjetaEstado } from "@/components/Semaforo";
+import {
+  AgruparPor,
+  Dashboard,
+  listarCorridas,
+  traerDashboard,
+  traerRestricciones,
+  urlExportacion,
+} from "@/lib/api";
+import { horas, numero, porcentaje, SIN_DATO, usd } from "@/lib/formato";
+import { estadoCapacidad, estadoCosto, estadoRestriccion, estadoServicio } from "@/lib/semaforo";
 
 const OPCIONES_AGRUPAR: { valor: AgruparPor; titulo: string }[] = [
   { valor: "dia", titulo: "día" },
@@ -197,60 +206,58 @@ function CorridaAuditada({
         </section>
       ) : null}
 
-      <Rejilla>
-        <Kpi
-          titulo="Nivel de servicio"
-          valor={porcentaje(servicio?.nivel_servicio ?? null, true)}
-          detalle="del modelo, no recalculado"
-        />
-        <Kpi
-          titulo="Costo total (caja)"
-          valor={usd(costos?.costo_total_caja_usd)}
-          detalle={`solo tipo_contable = CAJA; economico ${usd(costos?.costo_total_economico_usd)}`}
-        />
-        <Kpi titulo="Costo por tonelada" valor={usd(costos?.costo_usd_tn)} />
-        <Kpi
-          titulo="Alternativas mas baratas no factibles"
-          valor={numero(restriccion?.mas_baratas_no_factibles, 0)}
-          tono={restriccion && restriccion.mas_baratas_no_factibles > 0 ? "alerta" : "normal"}
-          detalle={`en ${numero(
-            restriccion?.pedidos_con_alternativa_mas_barata_no_factible,
-            0,
-          )} pedidos`}
-        />
-      </Rejilla>
-
-      <Rejilla>
-        <Kpi
-          titulo="Toneladas entregadas"
-          valor={numero(servicio?.toneladas_entregadas)}
-          detalle={`asignadas ${numero(servicio?.toneladas_asignadas)}`}
-        />
-        <Kpi titulo="Ciclo real promedio" valor={`${numero(servicio?.dias_ciclo_promedio)} dias`} />
-        <Kpi
-          titulo="Contenedores entregados"
-          valor={numero(servicio?.contenedores_entregados, 0)}
-          detalle={`creados ${numero(servicio?.contenedores_creados, 0)}`}
-        />
-        <Kpi
-          titulo="Filas con descuadre"
-          valor={numero(inventario?.filas_con_descuadre, 0)}
-          tono={inventario && inventario.filas_con_descuadre > 0 ? "critico" : "normal"}
-          detalle="C-12 exige descuadre_tn = 0"
-        />
-      </Rejilla>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <section className="panel">
-          <h2 className="titulo-panel">Costo de caja por categoria</h2>
-          <Grafico opcion={grafCostos} />
-        </section>
-        <section className="panel">
-          <h2 className="titulo-panel">Motivos de descarte de alternativas</h2>
-          <Grafico opcion={grafMotivos} />
-        </section>
+      <div>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Resumen — corrida {runId}
+        </h2>
+        <NivelUno runId={runId} datos={datos} />
       </div>
 
+      <div>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Servicio y cumplimiento
+        </h2>
+        <Rejilla>
+          <Kpi
+            titulo="Toneladas entregadas"
+            valor={numero(servicio?.toneladas_entregadas)}
+            detalle={`asignadas ${numero(servicio?.toneladas_asignadas)}`}
+          />
+          <Kpi
+            titulo="Ciclo real promedio"
+            valor={`${numero(servicio?.dias_ciclo_promedio)} dias`}
+          />
+          <Kpi
+            titulo="Contenedores entregados"
+            valor={numero(servicio?.contenedores_entregados, 0)}
+            detalle={`creados ${numero(servicio?.contenedores_creados, 0)}`}
+          />
+          <Kpi
+            titulo="Filas con descuadre"
+            valor={numero(inventario?.filas_con_descuadre, 0)}
+            tono={inventario && inventario.filas_con_descuadre > 0 ? "critico" : "normal"}
+            detalle="C-12 exige descuadre_tn = 0"
+          />
+        </Rejilla>
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Costo</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <section className="panel">
+            <h2 className="titulo-panel">Costo de caja por categoria</h2>
+            <Grafico opcion={grafCostos} />
+          </section>
+          <section className="panel">
+            <h2 className="titulo-panel">Motivos de descarte de alternativas</h2>
+            <Grafico opcion={grafMotivos} />
+          </section>
+        </div>
+      </div>
+
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Capacidad e inventario
+      </h2>
       <section className="panel">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="titulo-panel mb-0">
@@ -286,6 +293,9 @@ function CorridaAuditada({
         <Grafico opcion={grafInventario} />
       </section>
 
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Restricciones
+      </h2>
       <section className="panel">
         <h2 className="titulo-panel">Esperas fisicas</h2>
         <table className="tabla">
@@ -366,5 +376,125 @@ function CorridaAuditada({
         </div>
       </section>
     </div>
+  );
+}
+
+interface PuntoResumen {
+  run_id: string;
+  nivel_servicio: number | null;
+  costo_usd_tn: number | null;
+  sobrecosto_total_usd: number | null;
+  uso_pico_pct: number | null;
+}
+
+/** Junta lo que ya calculan /dashboard/ y /cost-explorer/constraints/ para un punto de la serie:
+ * ningun endpoint nuevo, solo dos llamadas que ya existian por separado (en /costos). */
+async function resumenDeCorrida(runId: string): Promise<PuntoResumen> {
+  const [dashboard, restricciones] = await Promise.all([
+    traerDashboard(runId),
+    traerRestricciones(runId).catch(() => null),
+  ]);
+  const usos = (dashboard.capacidad?.por_recurso ?? [])
+    .map((r) => r.uso_pico_pct)
+    .filter((v): v is number => v !== null);
+  return {
+    run_id: runId,
+    nivel_servicio: dashboard.servicio?.nivel_servicio ?? null,
+    costo_usd_tn: dashboard.costos?.costo_usd_tn ?? null,
+    sobrecosto_total_usd: restricciones?.sobrecosto_total_usd ?? null,
+    uso_pico_pct: usos.length ? Math.max(...usos) : null,
+  };
+}
+
+function variacionPct(anterior: number | null, actual: number | null): number | null {
+  if (anterior === null || actual === null || anterior === 0) return null;
+  return (100 * (actual - anterior)) / anterior;
+}
+
+function textoDelta(variacion: number | null, unidad: string, contraRunId?: string): string | undefined {
+  if (variacion === null || !contraRunId) return undefined;
+  const flecha = variacion >= 0 ? "▲" : "▼";
+  return `${flecha} ${numero(Math.abs(variacion))} ${unidad} vs ${contraRunId}`;
+}
+
+/** Nivel 1 (MOD v4.0): 4 numeros grandes con estado y tendencia contra las corridas anteriores
+ * del mismo escenario. No agrega ningun dato nuevo: reordena /dashboard/ y /constraints/ que ya
+ * existian, ahora comparados entre corridas en vez de leidos una por una. */
+function NivelUno({ runId, datos }: { runId: string; datos: Dashboard }) {
+  const [serie, setSerie] = useState<PuntoResumen[] | null>(null);
+
+  useEffect(() => {
+    let vigente = true;
+    setSerie(null);
+    listarCorridas()
+      .then(async (todas) => {
+        const actual = todas.find((c) => c.run_id === runId);
+        if (!actual) return;
+        const hermanas = todas
+          .filter((c) => c.escenario === actual.escenario && c.tiene_drill_down)
+          .sort((a, b) => (a.replica ?? 0) - (b.replica ?? 0));
+        const indice = hermanas.findIndex((c) => c.run_id === runId);
+        const ventana = indice === -1 ? [actual] : hermanas.slice(Math.max(0, indice - 3), indice + 1);
+        const puntos = await Promise.all(ventana.map((c) => resumenDeCorrida(c.run_id)));
+        if (vigente) setSerie(puntos);
+      })
+      .catch(() => vigente && setSerie(null));
+    return () => {
+      vigente = false;
+    };
+  }, [runId]);
+
+  const anterior = serie && serie.length >= 2 ? serie[serie.length - 2] : null;
+  const actualEnSerie = serie && serie.length >= 1 ? serie[serie.length - 1] : null;
+
+  const varServicio = variacionPct(anterior?.nivel_servicio ?? null, actualEnSerie?.nivel_servicio ?? null);
+  const varCosto = variacionPct(anterior?.costo_usd_tn ?? null, actualEnSerie?.costo_usd_tn ?? null);
+  const varSobrecosto = variacionPct(
+    anterior?.sobrecosto_total_usd ?? null,
+    actualEnSerie?.sobrecosto_total_usd ?? null,
+  );
+  const varUso = variacionPct(anterior?.uso_pico_pct ?? null, actualEnSerie?.uso_pico_pct ?? null);
+
+  const usoPico = Math.max(
+    0,
+    ...(datos.capacidad?.por_recurso ?? []).map((r) => r.uso_pico_pct ?? 0),
+  );
+  const tieneUso = (datos.capacidad?.por_recurso ?? []).some((r) => r.uso_pico_pct !== null);
+
+  return (
+    <Rejilla>
+      <TarjetaEstado
+        titulo="Servicio"
+        valor={porcentaje(datos.servicio?.nivel_servicio ?? null, true)}
+        detalle="nivel de servicio"
+        estado={estadoServicio(datos.servicio?.nivel_servicio ?? null)}
+        serie={serie?.map((p) => p.nivel_servicio)}
+        delta={textoDelta(varServicio, "pp", anterior?.run_id)}
+      />
+      <TarjetaEstado
+        titulo="Costo"
+        valor={usd(datos.costos?.costo_usd_tn)}
+        detalle="USD/tn"
+        estado={estadoCosto(varCosto)}
+        serie={serie?.map((p) => p.costo_usd_tn)}
+        delta={textoDelta(varCosto, "%", anterior?.run_id)}
+      />
+      <TarjetaEstado
+        titulo="Restricción"
+        valor={numero(datos.restriccion?.mas_baratas_no_factibles, 0)}
+        detalle="alternativas más baratas no factibles"
+        estado={estadoRestriccion(datos.restriccion?.mas_baratas_no_factibles ?? null)}
+        serie={serie?.map((p) => p.sobrecosto_total_usd)}
+        delta={textoDelta(varSobrecosto, "% sobrecosto", anterior?.run_id)}
+      />
+      <TarjetaEstado
+        titulo="Capacidad e inventario"
+        valor={tieneUso ? `${numero(usoPico)} %` : SIN_DATO}
+        detalle="ocupación pico"
+        estado={estadoCapacidad(tieneUso ? usoPico : null)}
+        serie={serie?.map((p) => p.uso_pico_pct)}
+        delta={textoDelta(varUso, "pp", anterior?.run_id)}
+      />
+    </Rejilla>
   );
 }
