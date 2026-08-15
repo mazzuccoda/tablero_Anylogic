@@ -68,9 +68,14 @@ export interface Corrida {
   version_esquema: string;
   version_modelo: string;
   duracion_campania_dias: number | null;
+  /** ADR-064.2 (MOD v4.1): null en una corrida importada con un esquema anterior. */
+  fecha_inicio_campania: string | null;
   importado: string;
   tiene_drill_down: boolean;
 }
+
+/** Agrupacion de series temporales: "dia" es la unica que no necesita fecha_inicio_campania. */
+export type AgruparPor = "dia" | "semana" | "mes" | "anio";
 
 export interface Mensaje {
   nivel: "ERROR" | "ADVERTENCIA" | "INFO";
@@ -82,6 +87,8 @@ export interface Dashboard {
   run_id: string;
   tipo: string;
   tiene_drill_down: boolean;
+  /** ADR-064.2 (MOD v4.1): null en una corrida importada con un esquema anterior. */
+  fecha_inicio_campania: string | null;
   motivo_sin_drill_down?: string;
   kpis_barrido?: Record<string, number | null>;
   servicio?: {
@@ -133,7 +140,21 @@ export interface Dashboard {
     }[];
   };
   inventario?: {
-    serie_diaria: { dia: number; stock_fisico_tn: number; stock_libre_tn: number }[];
+    /** Un periodo (nunca "dia") es el promedio y el pico de sus dias, no la suma (MOD v4.1). */
+    serie: {
+      periodo: string;
+      dia_desde: number | null;
+      dia_hasta: number | null;
+      fecha_desde: string | null;
+      fecha_hasta: string | null;
+      dias: number;
+      stock_fisico_tn: number | null;
+      stock_fisico_tn_pico: number | null;
+      stock_libre_tn: number | null;
+      stock_libre_tn_pico: number | null;
+    }[];
+    agrupado_por: AgruparPor;
+    tiene_fecha_calendario: boolean;
     ocupacion_pico_pct: number | null;
     filas_con_descuadre: number;
   };
@@ -258,8 +279,10 @@ export interface Importacion {
 export const listarCorridas = () =>
   pedir<{ results: Corrida[] }>("/simulation-runs/?limit=200").then((r) => r.results);
 
-export const traerDashboard = (runId: string) =>
-  pedir<Dashboard>(`/simulation-runs/${encodeURIComponent(runId)}/dashboard/`);
+export const traerDashboard = (runId: string, agruparPor: AgruparPor = "dia") =>
+  pedir<Dashboard>(
+    `/simulation-runs/${encodeURIComponent(runId)}/dashboard/?agrupar_por=${agruparPor}`,
+  );
 
 export const traerPorQue = (runId: string, pedido: string) =>
   pedir<PorQue>(

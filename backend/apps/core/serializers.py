@@ -45,6 +45,7 @@ class SimulationRunSerializer(serializers.ModelSerializer):
             "version_esquema",
             "version_modelo",
             "duracion_campania_dias",
+            "fecha_inicio_campania",
             "generado",
             "importado",
             "tiene_drill_down",

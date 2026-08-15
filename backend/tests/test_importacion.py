@@ -1,6 +1,7 @@
 """Pruebas de importacion (MOD v2.0, seccion 11)."""
 
 import json
+from datetime import date
 
 import pytest
 
@@ -32,13 +33,64 @@ def test_importa_el_paquete_valido(paquete):
     run = SimulationRun.objects.get(run_id="E-00-R0")
     assert run.tipo == TipoCorrida.AUDITORIA
     assert run.nivel_auditoria == "COMPLETA"
-    assert run.version_esquema == "ADR-064.1"
+    assert run.version_esquema == "ADR-064.2"
     assert DecisionAlternative.objects.filter(simulation_run=run).count() == 5
     assert AssignmentResult.objects.filter(simulation_run=run).count() == 2
     assert ArcExecution.objects.filter(simulation_run=run).count() == 7
     assert CostCharge.objects.filter(simulation_run=run).count() == 9
     assert InventorySnapshot.objects.filter(simulation_run=run).count() == 10
     assert ResourceCapacitySnapshot.objects.filter(simulation_run=run).count() == 15
+
+
+def test_importa_la_fecha_calendario_de_la_campania(paquete):
+    """MOD v4.1 / ADR-064.2: fecha = fecha_inicio_campania + (dia_campania - 1)."""
+    importar_paquete_auditoria(paquete)
+    run = SimulationRun.objects.get(run_id="E-00-R0")
+
+    assert run.fecha_inicio_campania == date(2026, 4, 1)
+
+    costo_dia_1 = CostCharge.objects.get(id_costo="C-0001")  # dia_campania = 1
+    assert costo_dia_1.fecha == date(2026, 4, 1)
+    costo_dia_4 = CostCharge.objects.get(id_costo="C-0008")  # dia_campania = 4
+    assert costo_dia_4.fecha == date(2026, 4, 4)
+
+    elegida = DecisionAlternative.objects.get(id_alternativa="P-0002-D1-A2")  # dia_campania = 2
+    assert elegida.fecha == date(2026, 4, 2)
+
+    arco = ArcExecution.objects.get(id_evento_arco="1")  # dia_inicio = 1.60
+    assert arco.fecha_inicio == date(2026, 4, 1)
+
+    asignacion = AssignmentResult.objects.get(id_asignacion="A-0002")  # dia_asignacion = 2.10
+    assert asignacion.fecha_asignacion == date(2026, 4, 2)
+
+
+def test_una_tabla_que_no_declara_fecha_la_deja_en_none(carpeta_ejemplo):
+    """Una tabla sin la columna en su esquema no inventa una fecha: queda None (ADR-T01)."""
+    from tests.conftest import empaquetar
+
+    esquema = json.loads((carpeta_ejemplo / "esquema_auditoria.json").read_text())
+    tabla_costos = next(t for t in esquema["tablas"] if t["tabla"] == "costos_eventos")
+    tabla_costos["columnas"] = [c for c in tabla_costos["columnas"] if c != "fecha"]
+
+    lineas_costos = (carpeta_ejemplo / "costos_eventos.csv").read_text().splitlines()
+    sin_fecha = [",".join(f.split(",")[:-1]) for f in lineas_costos]  # fecha es la ultima columna
+
+    importar_paquete_auditoria(
+        empaquetar(
+            carpeta_ejemplo,
+            {
+                "esquema_auditoria.json": json.dumps(esquema).encode(),
+                "costos_eventos.csv": ("\n".join(sin_fecha) + "\n").encode(),
+            },
+        )
+    )
+
+    run = SimulationRun.objects.get(run_id="E-00-R0")
+    # El resto del paquete si declara fecha_inicio_campania: no se ve afectado por el recorte de
+    # una sola tabla.
+    assert run.fecha_inicio_campania == date(2026, 4, 1)
+    assert CostCharge.objects.get(id_costo="C-0001").fecha is None
+    assert DecisionAlternative.objects.get(id_alternativa="P-0002-D1-A2").fecha == date(2026, 4, 2)
 
 
 def test_guarda_las_columnas_sin_campo_propio_en_extra(paquete):
@@ -132,8 +184,9 @@ def test_descuadre_de_inventario_deja_advertencia(carpeta_ejemplo):
     from tests.conftest import empaquetar
 
     lineas = (carpeta_ejemplo / "snapshot_inventario.csv").read_text().splitlines()
+    indice = lineas[0].split(",").index("descuadre_tn")
     columnas = lineas[1].split(",")
-    columnas[-1] = "2.5"
+    columnas[indice] = "2.5"
     lineas[1] = ",".join(columnas)
     mutado = ("\n".join(lineas) + "\n").encode()
 

@@ -30,6 +30,12 @@ El contrato **es el que publica AnyLogic**, no un esquema propio (ADR-T01): el i
 `nivelAuditoriaRed = DESACTIVADA`. El tablero lo dice explícitamente en vez de mostrar una vista
 vacía.
 
+Desde `version_esquema = ADR-064.2` (MOD v4.1) el manifiesto trae `fecha_inicio_campania` y cada
+tabla trae su columna `fecha` (o `fecha_inicio`/`fecha_fin`/`fecha_asignacion`/`fecha_cutoff`
+según la tabla), calculada por el modelo como `fecha_inicio_campania + (dia_campania - 1)`. Un
+paquete importado con un esquema anterior no la trae: el dashboard sigue funcionando en día de
+campaña y no ofrece agrupar por semana/mes/año.
+
 Tres reglas que vienen del modelo y que el código respeta:
 
 1. Los importes se suman **sólo** desde `costos_eventos` y **sólo** con `tipo_contable = CAJA`
@@ -128,8 +134,8 @@ GET    /api/v1/simulation-runs/
 POST   /api/v1/imports/upload/            # .zip del paquete o kpis_por_corrida.csv
 GET    /api/v1/imports/{id}/
 
-GET    /api/v1/simulation-runs/{run_id}/dashboard/
-GET    /api/v1/simulation-runs/{run_id}/inventory/
+GET    /api/v1/simulation-runs/{run_id}/dashboard/?agrupar_por=dia|semana|mes|anio
+GET    /api/v1/simulation-runs/{run_id}/inventory/?agrupar_por=dia|semana|mes|anio
 GET    /api/v1/simulation-runs/{run_id}/costs/
 GET    /api/v1/simulation-runs/{run_id}/capacity/
 GET    /api/v1/simulation-runs/{run_id}/decisions/

@@ -27,6 +27,7 @@ from apps.core.serializers import (
 )
 
 from . import agregados
+from .calendario import AgrupacionInvalida
 
 TABLAS_EXPORTABLES = {
     "decisiones": (DecisionAlternative, DecisionAlternativeSerializer),
@@ -46,7 +47,11 @@ def _run(identificador: str) -> SimulationRun:
 
 @api_view(["GET"])
 def dashboard_corrida(request, identificador):
-    return Response(agregados.dashboard(_run(identificador)))
+    agrupar_por = request.query_params.get("agrupar_por", "dia")
+    try:
+        return Response(agregados.dashboard(_run(identificador), agrupar_por=agrupar_por))
+    except AgrupacionInvalida as exc:
+        return Response({"detalle": str(exc)}, status=400)
 
 
 @api_view(["GET"])
@@ -58,9 +63,14 @@ def inventario_corrida(request, identificador):
     ubicacion = request.query_params.get("ubicacion")
     if ubicacion:
         filas = filas.filter(ubicacion=ubicacion)
+    agrupar_por = request.query_params.get("agrupar_por", "dia")
+    try:
+        resumen = agregados.inventario(run, agrupar_por=agrupar_por)
+    except AgrupacionInvalida as exc:
+        return Response({"detalle": str(exc)}, status=400)
     return Response(
         {
-            "resumen": agregados.inventario(run),
+            "resumen": resumen,
             "filas": InventorySnapshotSerializer(filas, many=True).data,
         }
     )

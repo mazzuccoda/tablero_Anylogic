@@ -7,6 +7,8 @@ importador guarda None, no 0.
 
 from __future__ import annotations
 
+import datetime
+
 VERDADEROS = {"true", "1", "si", "sí", "yes", "t"}
 FALSOS = {"false", "0", "no", "n", "f"}
 
@@ -45,3 +47,15 @@ def booleano(valor: str | None) -> bool | None:
     if v in FALSOS:
         return False
     return None
+
+
+def fecha(valor: str | None) -> datetime.date | None:
+    """`YYYY-MM-DD` (ADR-064.2, MOD v4.1). Un paquete con esquema anterior no trae la columna: se
+    lee vacia y queda None, nunca una fecha inventada."""
+    v = texto(valor)
+    if v == "":
+        return None
+    try:
+        return datetime.date.fromisoformat(v)
+    except ValueError:
+        return None

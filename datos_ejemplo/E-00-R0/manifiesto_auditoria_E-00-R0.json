@@ -1,10 +1,11 @@
 {
   "run_id": "E-00-R0",
-  "version_esquema": "ADR-064.1",
+  "version_esquema": "ADR-064.2",
   "escenario": "E-00",
   "replica": 0,
   "nivel_auditoria": "COMPLETA",
   "duracion_campania_dias": 5,
+  "fecha_inicio_campania": "2026-04-01",
   "generado": "Tue Aug 04 12:00:00 ART 2026",
   "tablas": {
     "decisiones_alternativas": {
