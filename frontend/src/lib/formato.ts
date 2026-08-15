@@ -1,5 +1,10 @@
 const NUMERO = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 });
 const ENTERO = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 0 });
+const FORMATO_FECHA = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
 
 /** Un vacio del modelo se muestra como "sin dato", nunca como 0 (ADR-064 seccion 5). */
 export const SIN_DATO = "sin dato";
@@ -28,4 +33,13 @@ export function horas(valor: number | null | undefined, aplica = true): string {
   if (valor === null || valor === undefined) return SIN_DATO;
   if (!aplica || valor < 0) return "no aplica";
   return `${NUMERO.format(valor)} h`;
+}
+
+/** `fecha_inicio_campania` (ADR-064.2): "YYYY-MM-DD" -> "01 abr 2026". null en corridas
+ * importadas con un esquema anterior, que no la traen. */
+export function fecha(valor: string | null | undefined): string {
+  if (!valor) return SIN_DATO;
+  const parseada = new Date(`${valor}T00:00:00`);
+  if (Number.isNaN(parseada.getTime())) return valor;
+  return FORMATO_FECHA.format(parseada);
 }
