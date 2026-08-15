@@ -41,7 +41,7 @@ from .esquema import (
     leer_manifiesto,
     validar_columnas,
 )
-from .valores import booleano, entero, flotante, texto
+from .valores import booleano, entero, fecha, flotante, texto
 
 PROYECTO_POR_DEFECTO = "Red logistica Argentina 2026"
 
@@ -94,7 +94,7 @@ def _filas(contenido: bytes) -> tuple[list[str], list[dict[str, str]]]:
 
 # --- Mapeo de columnas a campos ------------------------------------------------------------
 
-T, F, E, B = texto, flotante, entero, booleano
+T, F, E, B, D = texto, flotante, entero, booleano, fecha
 
 MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
     "decisiones_alternativas": (
@@ -122,6 +122,8 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
             "toneladas_factibles": ("toneladas_factibles", F),
             "toneladas_tomadas": ("toneladas_tomadas", F),
             "dia_simulacion": ("dia_simulacion", F),
+            "fecha": ("fecha", D),
+            "fecha_cutoff": ("fecha_cutoff", D),
         },
     ),
     "asignaciones_elegidas": (
@@ -147,6 +149,7 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
             "cerrada": ("cerrada", B),
             "cancelada": ("cancelada", B),
             "motivo_asignacion": ("motivo_asignacion", T),
+            "fecha_asignacion": ("fecha_asignacion", D),
         },
     ),
     "ejecucion_arcos": (
@@ -172,6 +175,8 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
             "duracion_esperada_horas": ("duracion_esperada_horas", F),
             "recurso_utilizado": ("recurso_utilizado", T),
             "estado_final": ("estado_final", T),
+            "fecha_inicio": ("fecha_inicio", D),
+            "fecha_fin": ("fecha_fin", D),
         },
     ),
     "costos_eventos": (
@@ -180,6 +185,7 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
             "id_costo": ("id_costo", T),
             "dia": ("dia", F),
             "dia_campania": ("dia_campania", E),
+            "fecha": ("fecha", D),
             "tipo_contable": ("tipo_contable", T),
             "categoria": ("categoria", T),
             "codigo_pedido": ("codigo_pedido", T),
@@ -205,6 +211,7 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
         InventorySnapshot,
         {
             "dia": ("dia", E),
+            "fecha": ("fecha", D),
             "ubicacion": ("ubicacion", T),
             "tipo_ubicacion": ("tipo_ubicacion", T),
             "producto": ("producto", T),
@@ -225,6 +232,7 @@ MAPEOS: dict[str, tuple[type, dict[str, tuple[str, object]]]] = {
         ResourceCapacitySnapshot,
         {
             "dia": ("dia", E),
+            "fecha": ("fecha", D),
             "tipo_recurso": ("tipo_recurso", T),
             "ubicacion": ("ubicacion", T),
             "capacidad_nominal": ("capacidad_nominal", F),
@@ -409,6 +417,7 @@ def _grabar_auditoria(esquema, manifiesto: Manifiesto, contenidos, mensajes, nom
             "nivel_auditoria": manifiesto.nivel_auditoria or NivelAuditoria.COMPLETA,
             "version_esquema": esquema.version_esquema,
             "duracion_campania_dias": manifiesto.duracion_campania_dias,
+            "fecha_inicio_campania": fecha(manifiesto.fecha_inicio_campania),
             "generado": manifiesto.generado,
         },
     )

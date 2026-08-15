@@ -29,6 +29,37 @@ def test_dashboard_suma_solo_los_cargos_de_caja(api, corrida_importada):
     assert datos["costos"]["costo_usd_tn"] == pytest.approx(57180.0 / 775.0)
 
 
+def test_dashboard_trae_la_fecha_de_inicio_de_campania(api, corrida_importada):
+    datos = api.get("/api/v1/simulation-runs/E-00-R0/dashboard/").json()
+
+    assert datos["fecha_inicio_campania"] == "2026-04-01"
+    assert datos["inventario"]["agrupado_por"] == "dia"
+    assert datos["inventario"]["tiene_fecha_calendario"] is True
+    assert datos["inventario"]["serie"][0]["periodo"] == "2026-04-01"
+
+
+def test_dashboard_agrupa_el_inventario_por_mes(api, corrida_importada):
+    # La corrida de ejemplo dura 5 dias (abril de 2026): agrupados por mes queda un solo periodo.
+    datos = api.get(
+        "/api/v1/simulation-runs/E-00-R0/dashboard/", {"agrupar_por": "mes"}
+    ).json()
+
+    assert datos["inventario"]["agrupado_por"] == "mes"
+    serie = datos["inventario"]["serie"]
+    assert len(serie) == 1
+    assert serie[0]["periodo"] == "2026-04"
+    assert serie[0]["dias"] == 5
+
+
+def test_dashboard_rechaza_una_agrupacion_desconocida(api, corrida_importada):
+    respuesta = api.get(
+        "/api/v1/simulation-runs/E-00-R0/dashboard/", {"agrupar_por": "trimestre"}
+    )
+
+    assert respuesta.status_code == 400
+    assert "trimestre" in respuesta.json()["detalle"]
+
+
 def test_dashboard_informa_la_restriccion(api, corrida_importada):
     restriccion = api.get("/api/v1/simulation-runs/E-00-R0/dashboard/").json()["restriccion"]
 

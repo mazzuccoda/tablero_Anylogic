@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genera el paquete de ejemplo `E-00-R0` con el formato que publica AnyLogic (ADR-064.1).
+"""Genera el paquete de ejemplo `E-00-R0` con el formato que publica AnyLogic (ADR-064.2).
 
 No reemplaza a una corrida real: es un paquete chico, coherente con el esquema publicado, para
 poder probar la importacion, el dashboard y la vista "por que" sin depender de una corrida de
@@ -14,13 +14,16 @@ from __future__ import annotations
 import json
 import sys
 import zipfile
+from datetime import date, timedelta
 from pathlib import Path
 
-VERSION_ESQUEMA = "ADR-064.1"
+VERSION_ESQUEMA = "ADR-064.2"
 RUN_ID = "E-00-R0"
 ESCENARIO = "E-00"
 REPLICA = 0
 DURACION_CAMPANIA_DIAS = 5
+# ADR-064.2 (MOD v4.1): ancla de calendario del dia 1 de campania.
+FECHA_INICIO_CAMPANIA = date(2026, 4, 1)
 
 ENCABEZADOS: dict[str, str] = {
     "decisiones_alternativas": (
@@ -52,7 +55,8 @@ ENCABEZADOS: dict[str, str] = {
         "costo_unitario_sin_restriccion,"
         "factible,orden_ranking,resultado_ejecucion,codigo_motivo,detalle_motivo,"
         "toneladas_tomadas,costo_elegida_usd_tn,diferencia_vs_elegida_usd_tn,"
-        "saldo_pedido_antes,saldo_pedido_despues,es_mas_barata_no_factible"
+        "saldo_pedido_antes,saldo_pedido_despues,es_mas_barata_no_factible,"
+        "fecha,fecha_cutoff"
     ),
     "asignaciones_elegidas": (
         "run_id,escenario,replica,id_asignacion,id_decision,id_alternativa,"
@@ -63,7 +67,7 @@ ENCABEZADOS: dict[str, str] = {
         "contenedores_creados,contenedores_entregados,"
         "costo_incremental_estimado,costo_end_to_end_estimado,"
         "costo_real_contenedores_usd,desvio_costo_usd,"
-        "dias_ciclo_real,cerrada,cancelada,motivo_asignacion"
+        "dias_ciclo_real,cerrada,cancelada,motivo_asignacion,fecha_asignacion"
     ),
     "ejecucion_arcos": (
         "run_id,escenario,replica,id_evento_arco,id_decision,id_alternativa,"
@@ -71,13 +75,13 @@ ENCABEZADOS: dict[str, str] = {
         "tipo_arco,origen,destino,circuito,es_cross_dock,"
         "toneladas,contenedores,viajes,distancia_km,"
         "dia_programacion,dia_inicio,dia_fin,duracion_real_horas,duracion_esperada_horas,"
-        "recurso_utilizado,id_recurso,estado_final"
+        "recurso_utilizado,id_recurso,estado_final,fecha_inicio,fecha_fin"
     ),
     "costos_eventos": (
         "run_id,escenario,replica,id_costo,dia,dia_campania,tipo_contable,categoria,"
         "codigo_pedido,id_asignacion,id_decision,id_contenedor,id_lote,producto,circuito,"
         "origen,destino,sitio,proveedor,unidad,cantidad,tarifa,importe_usd,id_operacion,"
-        "alcance,es_incremental,motivo"
+        "alcance,es_incremental,motivo,fecha"
     ),
     "snapshot_inventario": (
         "run_id,escenario,replica,dia,ubicacion,tipo_ubicacion,producto,capacidad_tn,"
@@ -85,13 +89,32 @@ ENCABEZADOS: dict[str, str] = {
         "stock_reservado_viajes_tn,stock_en_transito_entrada_tn,stock_en_transito_salida_tn,"
         "ingresos_dia_tn,egresos_dia_tn,produccion_dia_tn,ocupacion_pct,"
         "costo_almacenaje_dia_usd,dias_stock_promedio,lotes_abiertos,lote_mas_antiguo_dias,"
-        "descuadre_tn"
+        "descuadre_tn,fecha"
     ),
     "snapshot_capacidad_recursos": (
         "run_id,escenario,replica,dia,tipo_recurso,ubicacion,capacidad_nominal,"
-        "reservada,consumida,liberada,ocupada,libre,cola"
+        "reservada,consumida,liberada,ocupada,libre,cola,fecha"
     ),
 }
+
+# Que columna de dia usa cada tabla para derivar su(s) columna(s) de fecha (ADR-064.2). Se
+# resuelve aca, en un solo lugar, en vez de escribir "fecha": ... en cada fila a mano: asi ninguna
+# fila puede quedar con una fecha que no siga la misma regla que las demas.
+FECHA_DESDE_DIA: dict[str, dict[str, str]] = {
+    "decisiones_alternativas": {"fecha": "dia_campania", "fecha_cutoff": "dia_cutoff"},
+    "asignaciones_elegidas": {"fecha_asignacion": "dia_asignacion"},
+    "ejecucion_arcos": {"fecha_inicio": "dia_inicio", "fecha_fin": "dia_fin"},
+    "costos_eventos": {"fecha": "dia_campania"},
+    "snapshot_inventario": {"fecha": "dia"},
+    "snapshot_capacidad_recursos": {"fecha": "dia"},
+}
+
+
+def _fecha_de_dia(dia: object) -> str:
+    """dia de campania (entero o continuo) -> fecha calendario, igual regla que el modelo real."""
+    if dia in (None, ""):
+        return ""
+    return (FECHA_INICIO_CAMPANIA + timedelta(days=int(float(dia)) - 1)).isoformat()
 
 ARCHIVOS = {
     "decisiones_alternativas": "decisiones_alternativas.csv",
@@ -114,6 +137,10 @@ CLAVES = {
 
 def _fila(tabla: str, valores: dict[str, object]) -> str:
     columnas = ENCABEZADOS[tabla].split(",")
+    valores = dict(valores)
+    for columna_fecha, columna_dia in FECHA_DESDE_DIA.get(tabla, {}).items():
+        if columna_fecha not in valores:
+            valores[columna_fecha] = _fecha_de_dia(valores.get(columna_dia))
     desconocidas = set(valores) - set(columnas)
     if desconocidas:
         raise ValueError(f"{tabla}: columnas fuera del esquema {sorted(desconocidas)}")
@@ -709,6 +736,7 @@ def escribir(destino: Path) -> Path:
         "replica": REPLICA,
         "nivel_auditoria": "COMPLETA",
         "duracion_campania_dias": DURACION_CAMPANIA_DIAS,
+        "fecha_inicio_campania": FECHA_INICIO_CAMPANIA.isoformat(),
         "generado": "Tue Aug 04 12:00:00 ART 2026",
         "tablas": {
             tabla: {

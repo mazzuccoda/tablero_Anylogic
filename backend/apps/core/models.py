@@ -72,6 +72,9 @@ class SimulationRun(models.Model):
     version_esquema = models.CharField(max_length=30, blank=True)
     version_modelo = models.CharField(max_length=60, blank=True)
     duracion_campania_dias = models.IntegerField(null=True, blank=True)
+    # Ancla de calendario de la campania (ADR-064.2, MOD v4.1): un paquete importado con un
+    # esquema anterior no la trae, y agrupar por semana/mes/anio sin ella no significa nada.
+    fecha_inicio_campania = models.DateField(null=True, blank=True)
     generado = models.CharField(max_length=80, blank=True)
     importado = models.DateTimeField(auto_now_add=True)
 
@@ -182,6 +185,10 @@ class DecisionAlternative(FilaAuditoria):
     toneladas_factibles = models.FloatField(null=True, blank=True)
     toneladas_tomadas = models.FloatField(null=True, blank=True)
     dia_simulacion = models.FloatField(null=True, blank=True)
+    # ADR-064.2: fecha = fecha_inicio_campania + (dia_campania - 1). No se recalcula aca, se
+    # guarda tal como la publica el modelo (ADR-T01).
+    fecha = models.DateField(null=True, blank=True)
+    fecha_cutoff = models.DateField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -220,6 +227,7 @@ class AssignmentResult(FilaAuditoria):
     cerrada = models.BooleanField(null=True)
     cancelada = models.BooleanField(null=True)
     motivo_asignacion = models.CharField(max_length=120, blank=True)
+    fecha_asignacion = models.DateField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -257,6 +265,8 @@ class ArcExecution(FilaAuditoria):
     duracion_esperada_horas = models.FloatField(null=True, blank=True)
     recurso_utilizado = models.CharField(max_length=80, blank=True)
     estado_final = models.CharField(max_length=60, blank=True)
+    fecha_inicio = models.DateField(null=True, blank=True)
+    fecha_fin = models.DateField(null=True, blank=True)
 
     class Meta:
         indexes = [
@@ -284,6 +294,7 @@ class CostCharge(FilaAuditoria):
     id_costo = models.CharField(max_length=80)
     dia = models.FloatField(null=True, blank=True)
     dia_campania = models.IntegerField(null=True, blank=True)
+    fecha = models.DateField(null=True, blank=True)
     tipo_contable = models.CharField(max_length=20, choices=TipoContable.choices, blank=True)
     categoria = models.CharField(max_length=60, blank=True)
     codigo_pedido = models.CharField(max_length=80, blank=True)
@@ -310,6 +321,7 @@ class CostCharge(FilaAuditoria):
             models.Index(fields=["simulation_run", "tipo_contable"]),
             models.Index(fields=["simulation_run", "codigo_pedido"]),
             models.Index(fields=["simulation_run", "categoria"]),
+            models.Index(fields=["simulation_run", "fecha"]),
         ]
 
     def __str__(self) -> str:
@@ -323,6 +335,7 @@ class InventorySnapshot(FilaAuditoria):
         SimulationRun, on_delete=models.CASCADE, related_name="inventario"
     )
     dia = models.IntegerField()
+    fecha = models.DateField(null=True, blank=True)
     ubicacion = models.CharField(max_length=80)
     tipo_ubicacion = models.CharField(max_length=60, blank=True)
     producto = models.CharField(max_length=80)
@@ -342,6 +355,7 @@ class InventorySnapshot(FilaAuditoria):
         indexes = [
             models.Index(fields=["simulation_run", "dia"]),
             models.Index(fields=["simulation_run", "ubicacion", "producto"]),
+            models.Index(fields=["simulation_run", "fecha"]),
         ]
 
     def __str__(self) -> str:
@@ -355,6 +369,7 @@ class ResourceCapacitySnapshot(FilaAuditoria):
         SimulationRun, on_delete=models.CASCADE, related_name="capacidad"
     )
     dia = models.IntegerField()
+    fecha = models.DateField(null=True, blank=True)
     tipo_recurso = models.CharField(max_length=60)
     ubicacion = models.CharField(max_length=80)
     capacidad_nominal = models.FloatField(null=True, blank=True)
@@ -369,6 +384,7 @@ class ResourceCapacitySnapshot(FilaAuditoria):
         indexes = [
             models.Index(fields=["simulation_run", "tipo_recurso"]),
             models.Index(fields=["simulation_run", "dia"]),
+            models.Index(fields=["simulation_run", "fecha"]),
         ]
 
     def __str__(self) -> str:

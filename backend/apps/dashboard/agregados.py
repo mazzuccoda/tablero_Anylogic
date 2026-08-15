@@ -21,6 +21,7 @@ from apps.core.models import (
     SimulationRun,
     TipoContable,
 )
+from apps.dashboard.calendario import agrupar_por_periodo
 from apps.dashboard.cost_explorer.restricciones import (
     costo_unitario_elegida,
     costo_unitario_sin_restriccion,
@@ -175,15 +176,29 @@ def capacidad(run: SimulationRun) -> dict:
     return {"por_recurso": por_recurso, "dias": filas.values("dia").distinct().count()}
 
 
-def inventario(run: SimulationRun) -> dict:
+def inventario(run: SimulationRun, agrupar_por: str = "dia") -> dict:
     filas = InventorySnapshot.objects.filter(simulation_run=run)
-    serie = list(
-        filas.values("dia")
+    diaria = list(
+        filas.values("dia", "fecha")
         .annotate(stock_fisico_tn=Sum("stock_fisico_tn"), stock_libre_tn=Sum("stock_libre_tn"))
         .order_by("dia")
     )
+    # Agrupar por semana/mes/anio sin fecha calendario no significa nada: una corrida importada
+    # con un esquema anterior a ADR-064.2 no la tiene, y cae a "dia" en vez de fallar.
+    tiene_fecha = any(f["fecha"] is not None for f in diaria)
+    agrupado_por = agrupar_por if (agrupar_por == "dia" or tiene_fecha) else "dia"
+    serie = agrupar_por_periodo(
+        diaria,
+        agrupado_por,
+        campo_fecha="fecha",
+        campo_dia="dia",
+        # stock es un nivel: sumar dias de un mismo periodo daria toneladas-dia, otra magnitud.
+        campos_nivel=("stock_fisico_tn", "stock_libre_tn"),
+    )
     return {
-        "serie_diaria": serie,
+        "serie": serie,
+        "agrupado_por": agrupado_por,
+        "tiene_fecha_calendario": tiene_fecha,
         "ocupacion_pico_pct": filas.aggregate(pico=Max("ocupacion_pct"))["pico"],
         "filas_con_descuadre": filas.exclude(descuadre_tn=0)
         .exclude(descuadre_tn__isnull=True)
@@ -201,7 +216,11 @@ def calidad(run: SimulationRun) -> dict:
     }
 
 
-def dashboard(run: SimulationRun) -> dict:
+def dashboard(run: SimulationRun, agrupar_por: str = "dia") -> dict:
+    fecha_inicio_campania = (
+        run.fecha_inicio_campania.isoformat() if run.fecha_inicio_campania else None
+    )
+
     if not run.tiene_drill_down:
         # Corrida de barrido: solo existen los KPIs agregados (MOD v2.0, seccion 5.3, R-03).
         kpis = getattr(run, "kpis", None)
@@ -209,6 +228,7 @@ def dashboard(run: SimulationRun) -> dict:
             "run_id": run.run_id,
             "tipo": run.tipo,
             "tiene_drill_down": False,
+            "fecha_inicio_campania": fecha_inicio_campania,
             "motivo_sin_drill_down": (
                 "la corrida se ejecuto con nivelAuditoriaRed = DESACTIVADA: el barrido no escribe "
                 "las tablas de auditoria, asi que no hay vista por pedido para esta corrida"
@@ -220,11 +240,12 @@ def dashboard(run: SimulationRun) -> dict:
         "run_id": run.run_id,
         "tipo": run.tipo,
         "tiene_drill_down": True,
+        "fecha_inicio_campania": fecha_inicio_campania,
         "servicio": servicio(run),
         "costos": costos(run),
         "restriccion": restriccion(run),
         "capacidad": capacidad(run),
-        "inventario": inventario(run),
+        "inventario": inventario(run, agrupar_por=agrupar_por),
         "calidad": calidad(run),
     }
 

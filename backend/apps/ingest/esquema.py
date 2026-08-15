@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-VERSION_ESQUEMA_CONOCIDA = "ADR-064.1"
+VERSION_ESQUEMA_CONOCIDA = "ADR-064.2"
 
 # Nombre de tabla -> archivo esperado. Coincide con `escribirEsquemaAuditoria()` del modelo.
 ARCHIVO_POR_TABLA = {
@@ -87,6 +87,9 @@ class Manifiesto:
     replica: int | None
     nivel_auditoria: str
     duracion_campania_dias: int | None
+    # ADR-064.2 (MOD v4.1): ancla de calendario del dia 1 de campania, "YYYY-MM-DD". Un
+    # manifiesto de una version anterior no la trae y queda None.
+    fecha_inicio_campania: str | None
     generado: str
     filas_por_tabla: dict[str, int]
 
@@ -109,6 +112,7 @@ def leer_manifiesto(contenido: bytes | str) -> Manifiesto:
         replica=datos.get("replica"),
         nivel_auditoria=datos.get("nivel_auditoria", ""),
         duracion_campania_dias=datos.get("duracion_campania_dias"),
+        fecha_inicio_campania=datos.get("fecha_inicio_campania"),
         generado=datos.get("generado", ""),
         filas_por_tabla=filas,
     )

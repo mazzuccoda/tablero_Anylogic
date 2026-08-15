@@ -6,19 +6,27 @@ import { useEffect, useMemo, useState } from "react";
 import { Avisos } from "@/components/Avisos";
 import { Grafico } from "@/components/Grafico";
 import { Kpi, Rejilla } from "@/components/Kpi";
-import { Dashboard, traerDashboard, urlExportacion } from "@/lib/api";
+import { AgruparPor, Dashboard, traerDashboard, urlExportacion } from "@/lib/api";
 import { horas, numero, porcentaje, usd } from "@/lib/formato";
+
+const OPCIONES_AGRUPAR: { valor: AgruparPor; titulo: string }[] = [
+  { valor: "dia", titulo: "día" },
+  { valor: "semana", titulo: "semana" },
+  { valor: "mes", titulo: "mes" },
+  { valor: "anio", titulo: "año" },
+];
 
 export default function PaginaCorrida({ params }: { params: { runId: string } }) {
   const runId = decodeURIComponent(params.runId);
   const [datos, setDatos] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [agruparPor, setAgruparPor] = useState<AgruparPor>("dia");
 
   useEffect(() => {
-    traerDashboard(runId)
+    traerDashboard(runId, agruparPor)
       .then(setDatos)
       .catch((e: Error) => setError(e.message));
-  }, [runId]);
+  }, [runId, agruparPor]);
 
   if (error) return <p className="text-critico">{error}</p>;
   if (!datos) return <p className="text-slate-500">cargando...</p>;
@@ -46,7 +54,12 @@ export default function PaginaCorrida({ params }: { params: { runId: string } })
       </div>
 
       {datos.tiene_drill_down ? (
-        <CorridaAuditada runId={runId} datos={datos} />
+        <CorridaAuditada
+          runId={runId}
+          datos={datos}
+          agruparPor={agruparPor}
+          onAgruparPor={setAgruparPor}
+        />
       ) : (
         <CorridaDeBarrido datos={datos} />
       )}
@@ -85,7 +98,17 @@ function CorridaDeBarrido({ datos }: { datos: Dashboard }) {
   );
 }
 
-function CorridaAuditada({ runId, datos }: { runId: string; datos: Dashboard }) {
+function CorridaAuditada({
+  runId,
+  datos,
+  agruparPor,
+  onAgruparPor,
+}: {
+  runId: string;
+  datos: Dashboard;
+  agruparPor: AgruparPor;
+  onAgruparPor: (valor: AgruparPor) => void;
+}) {
   const { servicio, costos, restriccion, capacidad, inventario, calidad } = datos;
 
   const grafCostos = useMemo(
@@ -127,11 +150,29 @@ function CorridaAuditada({ runId, datos }: { runId: string; datos: Dashboard }) 
 
   const grafInventario = useMemo(
     () => ({
-      tooltip: { trigger: "axis" as const },
+      tooltip: {
+        trigger: "axis" as const,
+        formatter: (partes: unknown) => {
+          const fila = (Array.isArray(partes) ? partes[0] : partes) as {
+            dataIndex: number;
+            axisValue: string;
+          };
+          const punto = (inventario?.serie ?? [])[fila.dataIndex];
+          if (!punto) return fila.axisValue;
+          const rango =
+            punto.dias > 1 ? `${punto.fecha_desde ?? ""} a ${punto.fecha_hasta ?? ""}` : "";
+          return [
+            `<strong>${fila.axisValue}</strong>${rango ? ` (${rango})` : ""}`,
+            `stock físico: ${numero(punto.stock_fisico_tn)} tn${
+              punto.dias > 1 ? ` (promedio de ${punto.dias} días, pico ${numero(punto.stock_fisico_tn_pico)} tn)` : ""
+            }`,
+          ].join("<br/>");
+        },
+      },
       grid: { left: 8, right: 16, bottom: 8, top: 16, containLabel: true },
       xAxis: {
         type: "category" as const,
-        data: (inventario?.serie_diaria ?? []).map((f) => f.dia),
+        data: (inventario?.serie ?? []).map((f) => f.periodo),
       },
       yAxis: { type: "value" as const, name: "tn" },
       series: [
@@ -139,7 +180,7 @@ function CorridaAuditada({ runId, datos }: { runId: string; datos: Dashboard }) 
           name: "stock fisico",
           type: "line" as const,
           smooth: true,
-          data: (inventario?.serie_diaria ?? []).map((f) => f.stock_fisico_tn),
+          data: (inventario?.serie ?? []).map((f) => f.stock_fisico_tn),
           itemStyle: { color: "#0f766e" },
         },
       ],
@@ -211,7 +252,37 @@ function CorridaAuditada({ runId, datos }: { runId: string; datos: Dashboard }) 
       </div>
 
       <section className="panel">
-        <h2 className="titulo-panel">Stock fisico por dia</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="titulo-panel mb-0">
+            Stock físico por {OPCIONES_AGRUPAR.find((o) => o.valor === agruparPor)?.titulo}
+          </h2>
+          {inventario?.tiene_fecha_calendario ? (
+            <div className="flex items-center gap-1 text-xs text-slate-500">
+              ver por:
+              {OPCIONES_AGRUPAR.map((opcion) => (
+                <button
+                  key={opcion.valor}
+                  className="boton"
+                  aria-pressed={agruparPor === opcion.valor}
+                  onClick={() => onAgruparPor(opcion.valor)}
+                  style={
+                    agruparPor === opcion.valor
+                      ? { background: "#0f766e", color: "white", borderColor: "#0f766e" }
+                      : undefined
+                  }
+                >
+                  {opcion.titulo}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        {!inventario?.tiene_fecha_calendario ? (
+          <p className="mb-2 text-xs text-slate-500">
+            esta corrida se importó con un esquema anterior a ADR-064.2 y no trae fecha calendario:
+            solo se puede ver por día de campaña.
+          </p>
+        ) : null}
         <Grafico opcion={grafInventario} />
       </section>
 

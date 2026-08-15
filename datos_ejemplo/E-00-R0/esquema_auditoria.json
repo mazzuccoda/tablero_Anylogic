@@ -1,5 +1,5 @@
 {
-  "version_esquema": "ADR-064.1",
+  "version_esquema": "ADR-064.2",
   "tablas": [
     {
       "tabla": "decisiones_alternativas",
@@ -105,7 +105,9 @@
         "diferencia_vs_elegida_usd_tn",
         "saldo_pedido_antes",
         "saldo_pedido_despues",
-        "es_mas_barata_no_factible"
+        "es_mas_barata_no_factible",
+        "fecha",
+        "fecha_cutoff"
       ]
     },
     {
@@ -145,7 +147,8 @@
         "dias_ciclo_real",
         "cerrada",
         "cancelada",
-        "motivo_asignacion"
+        "motivo_asignacion",
+        "fecha_asignacion"
       ]
     },
     {
@@ -184,7 +187,9 @@
         "duracion_esperada_horas",
         "recurso_utilizado",
         "id_recurso",
-        "estado_final"
+        "estado_final",
+        "fecha_inicio",
+        "fecha_fin"
       ]
     },
     {
@@ -221,7 +226,8 @@
         "id_operacion",
         "alcance",
         "es_incremental",
-        "motivo"
+        "motivo",
+        "fecha"
       ]
     },
     {
@@ -257,7 +263,8 @@
         "dias_stock_promedio",
         "lotes_abiertos",
         "lote_mas_antiguo_dias",
-        "descuadre_tn"
+        "descuadre_tn",
+        "fecha"
       ]
     },
     {
@@ -282,7 +289,8 @@
         "liberada",
         "ocupada",
         "libre",
-        "cola"
+        "cola",
+        "fecha"
       ]
     }
   ]
