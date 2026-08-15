@@ -333,14 +333,20 @@ def serie_diaria(run: SimulationRun, ubicacion: str) -> dict:
     """Stock fisico dia a dia por producto: distingue un pico puntual de una acumulacion."""
     filas = list(
         InventorySnapshot.objects.filter(simulation_run=run, ubicacion=ubicacion)
-        .values("dia", "producto", "stock_fisico_tn", "ocupacion_pct")
+        .values("dia", "fecha", "producto", "stock_fisico_tn", "ocupacion_pct")
         .order_by("dia", "producto")
     )
+    # ADR-064.2 (MOD v4.1): una corrida importada con un esquema anterior no trae fecha, y el
+    # grafico cae a dia de campania en vez de mostrar un eje a medias.
+    tiene_fecha = any(fila["fecha"] is not None for fila in filas)
+    for fila in filas:
+        fila["fecha"] = fila["fecha"].isoformat() if fila["fecha"] else None
     return {
         "run_id": run.run_id,
         "ubicacion": ubicacion,
         "productos": sorted({fila["producto"] for fila in filas}),
         "dias": len({fila["dia"] for fila in filas}),
+        "tiene_fecha_calendario": tiene_fecha,
         "serie_diaria": filas,
     }
 

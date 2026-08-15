@@ -644,8 +644,11 @@ export interface StockDiario {
   ubicacion: string;
   productos: string[];
   dias: number;
+  /** ADR-064.2 (MOD v4.1): false en una corrida importada con un esquema anterior. */
+  tiene_fecha_calendario: boolean;
   serie_diaria: {
     dia: number;
+    fecha: string | null;
     producto: string;
     stock_fisico_tn: number | null;
     ocupacion_pct: number | null;

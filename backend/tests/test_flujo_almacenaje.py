@@ -151,6 +151,16 @@ def test_el_costo_por_producto_reconcilia_con_el_total_de_almacenaje(run, caja):
     assert suma == pytest.approx(datos["costo_almacenaje_total_usd"])
 
 
+def test_la_serie_diaria_trae_la_fecha_calendario(run):
+    """MOD v4.1 / ADR-064.2: la corrida de ejemplo arranca el 2026-04-01."""
+    datos = almacenamiento.serie_diaria(run, DEPOSITO)
+
+    assert datos["tiene_fecha_calendario"] is True
+    primera_fila = datos["serie_diaria"][0]
+    assert primera_fila["dia"] == 1
+    assert primera_fila["fecha"] == "2026-04-01"
+
+
 def test_el_stock_promedio_del_deposito_coincide_con_su_serie_diaria(run):
     flujo = almacenamiento.flujo_y_decision(run, DEPOSITO)
     serie = almacenamiento.serie_diaria(run, DEPOSITO)["serie_diaria"]

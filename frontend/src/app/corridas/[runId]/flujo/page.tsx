@@ -124,13 +124,20 @@ export default function PaginaFlujo({ params }: { params: { runId: string } }) {
 
   const grafStock = useMemo(() => {
     const serie = detalleDeposito?.stock.serie_diaria ?? [];
+    // ADR-064.2 (MOD v4.1): una corrida importada con un esquema anterior no trae fecha y el eje
+    // cae a dia de campania, igual que siempre.
+    const usaFecha = detalleDeposito?.stock.tiene_fecha_calendario ?? false;
     const dias = [...new Set(serie.map((fila) => fila.dia))].sort((a, b) => a - b);
+    const etiquetas = dias.map((dia) => {
+      if (!usaFecha) return String(dia);
+      return serie.find((fila) => fila.dia === dia)?.fecha ?? String(dia);
+    });
     const nombres = detalleDeposito?.stock.productos ?? [];
     return {
       tooltip: { trigger: "axis" as const },
       legend: { bottom: 0, textStyle: { fontSize: 10 } },
       grid: { left: 8, right: 16, bottom: 34, top: 16, containLabel: true },
-      xAxis: { type: "category" as const, data: dias, name: "dia" },
+      xAxis: { type: "category" as const, data: etiquetas, name: usaFecha ? "fecha" : "dia" },
       yAxis: { type: "value" as const, name: "tn" },
       series: nombres.map((producto) => ({
         name: producto,
