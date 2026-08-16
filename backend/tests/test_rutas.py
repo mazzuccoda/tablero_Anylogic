@@ -3,7 +3,7 @@
 import pytest
 from rest_framework.test import APIClient
 
-from apps.core.models import ArcExecution, CostCharge, TipoContable
+from apps.core.models import ArcExecution, AssignmentResult, CostCharge, TipoContable
 from apps.dashboard.cost_explorer.agregados import costos_por_categoria_con_cantidad
 from apps.dashboard.cost_explorer.filtros import FiltrosCostos
 from apps.dashboard.cost_explorer.rutas import SIN_RUTA, costos_por_ruta, costos_por_ruta_y_etapa
@@ -54,14 +54,67 @@ def test_el_costo_sin_asignacion_se_resuelve_por_lote_cuando_no_es_ambiguo(run, 
     assert sum(f["importe_usd"] or 0.0 for f in filas) == CAJA_TOTAL
 
 
-def test_un_lote_que_se_reparte_en_rutas_distintas_no_se_atribuye(run, caja):
-    """Si el mismo lote alimenta dos asignaciones que terminan en rutas distintas, no hay forma
-    de saber sin inventar un prorrateo cuanto del costo sin id_asignacion le toca a cada una —
-    se queda en SIN_RUTA a proposito."""
+def test_el_costo_por_sitio_se_reparte_por_tonelaje_real_si_el_lote_es_ambiguo(run, caja):
+    """Si el mismo lote alimenta dos asignaciones que terminan en rutas distintas, la atribucion
+    exacta por lote ya no alcanza. Pero ALMACENAMIENTO trae `sitio` poblado: si ese sitio es una
+    parada real de mas de una ruta candidata, el cargo se reparte proporcional al tonelaje real
+    de cada una (asignaciones_elegidas) — no en partes iguales, y no se descarta a SIN_RUTA
+    solo porque el lote dejo de ser inambiguo. C-0008 (540.0, sitio=DEPOSITO_SUR, ya no
+    inambiguo) se reparte con el mismo criterio."""
     ArcExecution.objects.create(
         simulation_run=run,
         id_evento_arco="A-EXTRA-1",
         id_asignacion="A-0002-B",  # otra asignacion, mismo lote, ruta distinta a la de A-0002
+        id_lote="L-MAP-01",
+        tipo_arco="ORIGEN_TERMINAL_CONTENEDOR_CARGADO",
+        origen="DEPOSITO_SUR",
+        destino="OTRO_DESTINO",
+        dia_inicio=5.0,
+        dia_fin=5.5,
+    )
+    AssignmentResult.objects.create(
+        simulation_run=run,
+        id_asignacion="A-0002-B",
+        toneladas_asignadas=100.0,
+    )
+    CostCharge.objects.create(
+        simulation_run=run,
+        id_costo="C-EXTRA-SITIO",
+        dia=5.0,
+        tipo_contable=TipoContable.CAJA,
+        categoria="ALMACENAMIENTO",
+        id_lote="L-MAP-01",
+        sitio="DEPOSITO_SUR",  # primera parada real de ambas rutas candidatas
+        unidad="USD_TN_DIA",
+        cantidad=10.0,
+        tarifa=40.0,
+        importe_usd=400.0,
+    )
+
+    filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
+    tn_terminal, tn_otro = 300.0, 100.0  # toneladas reales de cada ruta candidata
+    total_tn = tn_terminal + tn_otro
+    reparto_extra = 400.0 * tn_terminal / total_tn
+    reparto_c0008 = 540.0 * tn_terminal / total_tn
+    assert filas["DEPOSITO_SUR→TERMINAL_BAHIA"]["importe_usd"] == pytest.approx(
+        20040.0 + reparto_c0008 + reparto_extra
+    )
+    reparto_extra_otro = 400.0 * tn_otro / total_tn
+    reparto_c0008_otro = 540.0 * tn_otro / total_tn
+    assert filas["DEPOSITO_SUR→OTRO_DESTINO"]["importe_usd"] == pytest.approx(
+        reparto_c0008_otro + reparto_extra_otro
+    )
+    assert SIN_RUTA not in filas
+
+
+def test_el_costo_sin_sitio_reconocible_ni_lote_unico_cae_en_sin_ruta(run, caja):
+    """Si ni el `id_lote` resuelve una ruta unica ni el `sitio` del cargo es una parada de
+    ninguna ruta reconstruida, no hay base para repartir sin inventar un criterio — se queda en
+    SIN_RUTA a proposito, no se descarta."""
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-EXTRA-1",
+        id_asignacion="A-0002-B",
         id_lote="L-MAP-01",
         tipo_arco="ORIGEN_TERMINAL_CONTENEDOR_CARGADO",
         origen="DEPOSITO_SUR",
@@ -76,6 +129,7 @@ def test_un_lote_que_se_reparte_en_rutas_distintas_no_se_atribuye(run, caja):
         tipo_contable=TipoContable.CAJA,
         categoria="ALMACENAMIENTO",
         id_lote="L-MAP-01",
+        sitio="SITIO_INEXISTENTE",  # no aparece en ninguna ruta reconstruida
         unidad="USD_TN_DIA",
         cantidad=10.0,
         tarifa=1.0,
@@ -83,10 +137,7 @@ def test_un_lote_que_se_reparte_en_rutas_distintas_no_se_atribuye(run, caja):
     )
 
     filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
-    # ahora L-MAP-01 alcanza dos rutas (DEPOSITO_SUR→TERMINAL_BAHIA y DEPOSITO_SUR→OTRO_DESTINO):
-    # ningun cargo de ese lote sin id_asignacion propio se puede repartir sin inventar un
-    # criterio — ni el nuevo (10.0) ni el que antes se atribuia sin ambiguedad (C-0008, 540.0)
-    assert filas[SIN_RUTA]["importe_usd"] == pytest.approx(550.0)
+    assert filas[SIN_RUTA]["importe_usd"] == pytest.approx(10.0)
 
 
 def test_las_toneladas_por_ruta_salen_de_las_asignaciones(run, caja):
@@ -119,6 +170,41 @@ def test_el_tramo_planta_deposito_se_antepone_cuando_el_lote_no_es_ambiguo(run, 
     # el id_asignacion de la transferencia (TRA-...) no aparece como una ruta propia: ningun
     # cargo real lo referencia, solo sirve para encontrar el tramo desde planta
     assert not any(ruta.startswith("TRA-") for ruta in filas)
+
+
+def test_el_contenedor_vacio_no_es_el_arranque_de_la_ruta(run, caja):
+    """TERMINAL_ORIGEN_CONTENEDOR_VACIO es el contenedor viajando vacio hacia el deposito para
+    cargarse, no el producto moviendose: si es cronologicamente el primer arco de la asignacion,
+    no debe convertirse en el arranque de la ruta (`TERMINAL_BAHIA→PLANTA_NORTE→TERMINAL_BAHIA`,
+    absurdo — el producto no estaba en TERMINAL_BAHIA antes de salir de PLANTA_NORTE). La ruta
+    real arranca en el primer tramo que de verdad mueve producto."""
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-VACIO-1",
+        id_asignacion="A-0003",
+        id_lote="L-VACIO-01",
+        tipo_arco="TERMINAL_ORIGEN_CONTENEDOR_VACIO",
+        origen="TERMINAL_BAHIA",
+        destino="PLANTA_NORTE",
+        dia_inicio=10.0,
+        dia_fin=10.5,
+    )
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-VACIO-2",
+        id_asignacion="A-0003",
+        id_lote="L-VACIO-01",
+        tipo_arco="ORIGEN_TERMINAL_CONTENEDOR_CARGADO",
+        origen="PLANTA_NORTE",
+        destino="TERMINAL_BAHIA",
+        dia_inicio=10.5,
+        dia_fin=11.0,
+    )
+
+    filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
+
+    assert "TERMINAL_BAHIA→PLANTA_NORTE→TERMINAL_BAHIA" not in filas
+    assert "PLANTA_NORTE→TERMINAL_BAHIA" in filas
 
 
 def test_el_filtro_por_material_recorta_costo_y_toneladas_igual(run):

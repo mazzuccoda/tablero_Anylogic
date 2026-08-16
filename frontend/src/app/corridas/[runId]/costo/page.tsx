@@ -43,9 +43,6 @@ interface MatrizEstrategia {
   columnas: string[];
   celdas: Record<string, Record<string, number>>;
   totales: Record<string, ColumnaMatriz>;
-  /** etapas cuya fila se prorrateo por tonelaje en vez de venir de un id_asignacion real —
-   * se marcan aparte para que la tabla no las mezcle en silencio con lo medido. */
-  etapasProrateadas: Set<string>;
 }
 
 const RESTO_DE_RUTAS = "Resto de rutas";
@@ -53,13 +50,13 @@ const SIN_RUTA_ASIGNABLE = "Sin ruta asignable";
 const MAX_RUTAS_EN_MATRIZ = 6;
 
 /** ALMACENAMIENTO, FLETE_PRODUCTO (etapa TRANSFERENCIA_PLANTA_DEPOSITO) e IN_DEPOSITO
- * (etapa INGRESO_DEPOSITO) nunca llevan `id_asignacion` en el paquete real — son cargos
- * periodicos sobre un lote, no sobre un envio. Como todo el producto sale de la planta (el
- * sankey de /flujo lo muestra: el 100% de los arcos nace ahi) y ya conocemos el tonelaje real
- * por ruta (`asignaciones_elegidas`, la misma base de la fila "% estrategia"), repartir estos
- * tres por tonelaje no es inventar un numero: es la misma lectura que ya se usa en otro lado de
- * esta pantalla, aplicada de forma pareja en vez de dejar la mayoria en "Sin ruta asignable". */
-const ETAPAS_PRORRATEADAS_POR_TONELAJE = new Set([
+ * (etapa INGRESO_DEPOSITO) no llevan `id_asignacion` en el paquete real — son cargos periodicos
+ * sobre un lote, no sobre un envio puntual. El backend (ADR-T06.1) ya las atribuye a la ruta:
+ * primero por id_asignacion o id_lote exacto cuando no es ambiguo, y si no, por el sitio real del
+ * cargo (`sitio`, 100% poblado) repartido segun el tonelaje real de las rutas que efectivamente
+ * pasan por ese sitio (`asignaciones_elegidas`, la misma base de "% estrategia") — no toda la
+ * red. Lo que ni el sitio ni el lote resuelven queda en "Sin ruta asignable", sin inventarlo. */
+const ETAPAS_CON_REPARTO_POR_SITIO = new Set([
   "TRANSFERENCIA_PLANTA_DEPOSITO",
   "INGRESO_DEPOSITO",
   "ALMACENAMIENTO",
@@ -132,36 +129,7 @@ async function matrizEstrategia(runId: string, material: string | null): Promise
     celdas[celda.etapa][columna] = (celdas[celda.etapa][columna] ?? 0) + (celda.importe_usd ?? 0);
   }
 
-  // Las tres etapas de ETAPAS_PRORRATEADAS_POR_TONELAJE llegan casi enteras en "Sin ruta
-  // asignable" (no tienen id_asignacion propio): en vez de dejarlas ahi, se reparten entre las
-  // rutas nombradas + "Resto de rutas" segun el mismo tonelaje que ya se muestra en la fila "%
-  // estrategia" de cada columna. "Sin ruta asignable" no tiene tonelaje propio confiable (por
-  // eso esta en esa columna), asi que para estas etapas queda en 0: todo el importe se repartio.
-  const columnasConTonelaje = [...top, ...(resto.length > 0 ? [RESTO_DE_RUTAS] : [])];
-  const toneladasBase = columnasConTonelaje.reduce((s, c) => s + (totales[c]?.toneladas ?? 0), 0);
-  const etapasProrateadas = new Set<string>();
-
-  for (const etapa of ETAPAS_PRORRATEADAS_POR_TONELAJE) {
-    if (!celdas[etapa]) continue;
-    const totalEtapa = columnas.reduce((s, c) => s + (celdas[etapa][c] ?? 0), 0);
-    if (totalEtapa === 0 || !toneladasBase) continue;
-    etapasProrateadas.add(etapa);
-    for (const columna of columnas) {
-      const valorViejo = celdas[etapa][columna] ?? 0;
-      const valorNuevo = columnasConTonelaje.includes(columna)
-        ? totalEtapa * ((totales[columna]?.toneladas ?? 0) / toneladasBase)
-        : 0;
-      celdas[etapa][columna] = valorNuevo;
-      if (totales[columna]) {
-        totales[columna].importe += valorNuevo - valorViejo;
-        // resta de flotantes: sin este redondeo "Sin ruta asignable" queda en -0.000000001 y se
-        // muestra como "USD -0" aunque las tres etapas prorrateadas eran su unico contenido.
-        if (Math.abs(totales[columna].importe) < 1e-6) totales[columna].importe = 0;
-      }
-    }
-  }
-
-  return { rutas: top, columnas, celdas, totales, etapasProrateadas };
+  return { rutas: top, columnas, celdas, totales };
 }
 
 export default function PaginaCostoNivel2({ params }: { params: { runId: string } }) {
@@ -434,14 +402,15 @@ function MatrizEstrategiaPanel({
     <section className="panel">
       <h2 className="titulo-panel">Estrategia por producto — matriz por etapa</h2>
       <p className="mb-2 text-xs text-slate-500">
-        arcos en columnas (ruta física real, no el tipo de circuito), etapa logística en filas —
-        la versión tablero de la matriz &quot;Estrategia&quot;. El total se compara contra el
+        arcos en columnas (ruta física real, no el tipo de circuito, siempre desde
+        <code>PLANTA</code> — el único origen real de la red), etapa logística en filas — la
+        versión tablero de la matriz &quot;Estrategia&quot;. El total se compara contra el
         promedio de estos mismos arcos (no hay una referencia declarada por el usuario en el
-        esquema, así que no se inventa una). Las filas marcadas &quot;(prorrateado por
-        tonelaje)&quot; (flete a depósito, ingreso a depósito, almacenamiento) no llevan
-        <code>id_asignacion</code> propio en el paquete: como el 100% del producto sale de planta
-        (ver el sankey en /flujo), se reparten entre estas rutas según el mismo tonelaje de la
-        fila &quot;% estrategia&quot; — es una estimación, no un importe medido arco por arco.
+        esquema, así que no se inventa una). Las filas &quot;(con reparto por sitio)&quot; (flete
+        a depósito, ingreso a depósito, almacenamiento) no llevan <code>id_asignacion</code>{" "}
+        propio: el backend las atribuye por el sitio real del cargo y el tonelaje real de las
+        rutas que pasan por ahí cuando el envío es ambiguo — exacto cuando una sola ruta usa ese
+        sitio, repartido por tonelaje cuando varias lo comparten.
       </p>
 
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
@@ -500,9 +469,9 @@ function MatrizEstrategiaPanel({
                 <tr key={etapa}>
                   <td>
                     {etapa}
-                    {matriz.etapasProrateadas.has(etapa) ? (
-                      <span className="ml-1 text-xs italic text-slate-400" title="No tiene id_asignacion propio: se reparte por tonelaje entre estas rutas, no es un importe medido por arco.">
-                        (prorrateado por tonelaje)
+                    {ETAPAS_CON_REPARTO_POR_SITIO.has(etapa) ? (
+                      <span className="ml-1 text-xs italic text-slate-400" title="Sin id_asignacion propio: el backend lo atribuye por sitio real + tonelaje cuando el envío es ambiguo, no en partes iguales entre todas las rutas.">
+                        (con reparto por sitio)
                       </span>
                     ) : null}
                   </td>
@@ -590,12 +559,11 @@ function MatrizUnitariaPanel({
         el mismo cruce de arriba, en USD/tn: cada celda es el importe de esa etapa en esa columna
         dividido por las toneladas de esa columna. Con &quot;Resto de rutas&quot; y &quot;Sin ruta
         asignable&quot; la tabla cubre el 100% del filtro, así que el ponderado del pie coincide
-        con el costo total — nada queda afuera en silencio. Las filas &quot;(prorrateado por
-        tonelaje)&quot; (ALMACENAMIENTO, flete e ingreso a depósito) no tienen
-        <code>id_asignacion</code> propio: se reparten entre las rutas nombradas y &quot;Resto de
-        rutas&quot; según su tonelaje real (misma base que la fila &quot;% estrategia&quot;), así
-        que en &quot;Sin ruta asignable&quot; quedan en 0 para esas etapas puntuales — es una
-        estimación, no un cobro medido por arco.
+        con el costo total — nada queda afuera en silencio. Las filas &quot;(con reparto por
+        sitio)&quot; (ALMACENAMIENTO, flete e ingreso a depósito) no tienen{" "}
+        <code>id_asignacion</code> propio: el backend las atribuye por el sitio real del cargo
+        (100% poblado en el paquete) y el tonelaje real de las rutas que pasan por ahí — sólo lo
+        que ni el sitio ni el lote resuelven queda en &quot;Sin ruta asignable&quot;.
       </p>
 
       {!matriz ? (
@@ -620,9 +588,9 @@ function MatrizUnitariaPanel({
                 <tr key={etapa}>
                   <td>
                     {etapa}
-                    {matriz.etapasProrateadas.has(etapa) ? (
-                      <span className="ml-1 text-xs italic text-slate-400" title="No tiene id_asignacion propio: se reparte por tonelaje entre estas rutas, no es un importe medido por arco.">
-                        (prorrateado por tonelaje)
+                    {ETAPAS_CON_REPARTO_POR_SITIO.has(etapa) ? (
+                      <span className="ml-1 text-xs italic text-slate-400" title="Sin id_asignacion propio: el backend lo atribuye por sitio real + tonelaje cuando el envío es ambiguo, no en partes iguales entre todas las rutas.">
+                        (con reparto por sitio)
                       </span>
                     ) : null}
                   </td>
