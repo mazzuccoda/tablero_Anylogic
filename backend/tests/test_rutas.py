@@ -172,6 +172,41 @@ def test_el_tramo_planta_deposito_se_antepone_cuando_el_lote_no_es_ambiguo(run, 
     assert not any(ruta.startswith("TRA-") for ruta in filas)
 
 
+def test_el_contenedor_vacio_no_es_el_arranque_de_la_ruta(run, caja):
+    """TERMINAL_ORIGEN_CONTENEDOR_VACIO es el contenedor viajando vacio hacia el deposito para
+    cargarse, no el producto moviendose: si es cronologicamente el primer arco de la asignacion,
+    no debe convertirse en el arranque de la ruta (`TERMINAL_BAHIA→PLANTA_NORTE→TERMINAL_BAHIA`,
+    absurdo — el producto no estaba en TERMINAL_BAHIA antes de salir de PLANTA_NORTE). La ruta
+    real arranca en el primer tramo que de verdad mueve producto."""
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-VACIO-1",
+        id_asignacion="A-0003",
+        id_lote="L-VACIO-01",
+        tipo_arco="TERMINAL_ORIGEN_CONTENEDOR_VACIO",
+        origen="TERMINAL_BAHIA",
+        destino="PLANTA_NORTE",
+        dia_inicio=10.0,
+        dia_fin=10.5,
+    )
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-VACIO-2",
+        id_asignacion="A-0003",
+        id_lote="L-VACIO-01",
+        tipo_arco="ORIGEN_TERMINAL_CONTENEDOR_CARGADO",
+        origen="PLANTA_NORTE",
+        destino="TERMINAL_BAHIA",
+        dia_inicio=10.5,
+        dia_fin=11.0,
+    )
+
+    filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
+
+    assert "TERMINAL_BAHIA→PLANTA_NORTE→TERMINAL_BAHIA" not in filas
+    assert "PLANTA_NORTE→TERMINAL_BAHIA" in filas
+
+
 def test_el_filtro_por_material_recorta_costo_y_toneladas_igual(run):
     filtros = FiltrosCostos(exactos={"material": "MAT_UREA"})
     filas = costos_por_ruta(run, filtros)

@@ -7,10 +7,17 @@ uso y a que costo" es la secuencia de sitios de `ejecucion_arcos` para una `id_a
 ordenada en el tiempo real (`dia_inicio`) — por ejemplo `RUTA9→T4` o `DODERO→RUTA9→T4`.
 
 El origen real (planta) se antepone siempre que la topologia lo determine sin ambiguedad: en el
-paquete real, cada deposito (`destino` de un arco `PLANTA_DEPOSITO`) se alimenta siempre desde el
-mismo origen — de hecho, un unico "PLANTA" en toda la red. Esto es una propiedad del sitio, no de
-la transferencia puntual de un lote: no hace falta encadenar por `id_lote` para saberlo (ver
+paquete real, cada deposito (`destino` de un arco de ingreso de lote — `PLANTA_DEPOSITO` o
+`CROSS_DOCK`, ver `ARCOS_INGRESO_LOTE` en `objetos.py`) se alimenta siempre desde el mismo origen —
+de hecho, un unico "PLANTA" en toda la red. Esto es una propiedad del sitio, no de la
+transferencia puntual de un lote: no hace falta encadenar por `id_lote` para saberlo (ver
 `_origen_por_destino`).
+
+`TERMINAL_ORIGEN_CONTENEDOR_VACIO` (494 arcos del paquete real) tampoco es un tramo del producto:
+es el contenedor vacio viajando hacia el deposito para cargarse, antes de que el producto se mueva
+— por eso se excluye igual que las esperas al reconstruir la cadena de sitios. Sin excluirlo, una
+asignacion cuyo contenedor sale vacio desde una terminal (`T4→RUTA9`, por ejemplo) arranca su ruta
+ahi en vez de en el deposito donde el producto realmente se cargo.
 
 Tres categorias (`ALMACENAMIENTO`, `FLETE_PRODUCTO`, `IN_DEPOSITO`) no llevan `id_asignacion`
 porque son cargos periodicos sobre un lote parado o moviendose entre sitios, no sobre un envio
@@ -37,10 +44,15 @@ from apps.core.models import ArcExecution, AssignmentResult, SimulationRun
 from .agregados import _porcentaje, cargos_filtrados, total_filtrado
 from .clasificacion import clasificar_etapa, ordenar_por_etapa
 from .filtros import FiltrosCostos
+from .objetos import ARCOS_INGRESO_LOTE
 
-# Las esperas no representan un sitio nuevo: el producto no se movio, solo hizo tiempo.
-TIPOS_ARCO_ESPERA = ("ESPERA_PORTACONTENEDOR", "ESPERA_POSICION")
-PLANTA_DEPOSITO = "PLANTA_DEPOSITO"
+# Arcos que no representan el movimiento del producto: las esperas (el producto no se movio, solo
+# hizo tiempo) y el contenedor vacio yendo a cargarse (el producto todavia no viajo en el).
+TIPOS_ARCO_SIN_PRODUCTO = (
+    "ESPERA_PORTACONTENEDOR",
+    "ESPERA_POSICION",
+    "TERMINAL_ORIGEN_CONTENEDOR_VACIO",
+)
 
 SIN_RUTA = "SIN_RUTA"
 
@@ -50,12 +62,13 @@ CATEGORIAS_POR_SITIO = ("ALMACENAMIENTO", "FLETE_PRODUCTO", "IN_DEPOSITO")
 
 
 def _origen_por_destino(run: SimulationRun) -> dict[str, str]:
-    """`destino -> origen` de los tramos planta->deposito, solo para los destinos que siempre se
-    alimentan desde el mismo origen. No depende de `id_lote`: es una propiedad fija de cada
-    sitio, no de una transferencia puntual — por eso alcanza para anteponer el origen real a
-    cualquier ruta, ambigua o no aguas abajo."""
+    """`destino -> origen` de los tramos de ingreso de lote (`ARCOS_INGRESO_LOTE`:
+    `PLANTA_DEPOSITO` y `CROSS_DOCK`), solo para los destinos que siempre se alimentan desde el
+    mismo origen. No depende de `id_lote`: es una propiedad fija de cada sitio, no de una
+    transferencia puntual — por eso alcanza para anteponer el origen real a cualquier ruta,
+    ambigua o no aguas abajo."""
     arcos = (
-        ArcExecution.objects.filter(simulation_run=run, tipo_arco=PLANTA_DEPOSITO)
+        ArcExecution.objects.filter(simulation_run=run, tipo_arco__in=ARCOS_INGRESO_LOTE)
         .values("origen", "destino")
         .distinct()
     )
@@ -73,8 +86,8 @@ def _rutas_por_asignacion(run: SimulationRun) -> tuple[dict[str, str], dict[str,
     `_ruta_unica_por_lote` para saber que asignaciones comparten lote."""
     tramos = (
         ArcExecution.objects.filter(simulation_run=run)
-        .exclude(tipo_arco__in=TIPOS_ARCO_ESPERA)
-        .exclude(tipo_arco=PLANTA_DEPOSITO)
+        .exclude(tipo_arco__in=TIPOS_ARCO_SIN_PRODUCTO)
+        .exclude(tipo_arco__in=ARCOS_INGRESO_LOTE)
         .exclude(id_asignacion="")
         .order_by("id_asignacion", "dia_inicio")
         .values("id_asignacion", "id_lote", "origen", "destino")
