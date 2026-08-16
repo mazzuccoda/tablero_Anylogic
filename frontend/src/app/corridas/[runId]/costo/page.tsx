@@ -29,12 +29,24 @@ interface Datos {
   materiales: FilaDimension[];
 }
 
-interface MatrizEstrategia {
-  rutas: string[];
-  celdas: Record<string, Record<string, number>>;
-  totales: Record<string, { importe: number; toneladas: number | null; porcentajeToneladas: number | null }>;
+interface ColumnaMatriz {
+  importe: number;
+  toneladas: number | null;
+  porcentajeToneladas: number | null;
 }
 
+interface MatrizEstrategia {
+  /** las N rutas nombradas mas pesadas — lo que muestra el panel en USD (sin cambios). */
+  rutas: string[];
+  /** rutas + "Resto de rutas" + "Sin ruta asignable": cubre el 100% del filtro, para que el
+   * panel en USD/tn pueda ponderar contra el total real sin dejar nada afuera. */
+  columnas: string[];
+  celdas: Record<string, Record<string, number>>;
+  totales: Record<string, ColumnaMatriz>;
+}
+
+const RESTO_DE_RUTAS = "Resto de rutas";
+const SIN_RUTA_ASIGNABLE = "Sin ruta asignable";
 const MAX_RUTAS_EN_MATRIZ = 6;
 
 function baseDe(metrica: { base: { nombre: string; valor: number | null } }): string {
@@ -45,7 +57,12 @@ function baseDe(metrica: { base: { nombre: string; valor: number | null } }): st
  * igual que la matriz del Excel de referencia. La columna ya no es el `circuito` declarado (un
  * tipo de consolidacion de 5 valores) sino la ruta fisica real, reconstruida por el backend
  * encadenando los sitios de ejecucion_arcos (`RUTA9→T4`, `DODERO→RUTA9→T4`...). Se filtra por
- * material, no por producto: es la granularidad que usa el Excel real (AEL/CDL/JCCL/JCL/PCL). */
+ * material, no por producto: es la granularidad que usa el Excel real (AEL/CDL/JCCL/JCL/PCL).
+ *
+ * Ademas de las N rutas mas pesadas (lo unico que muestra el panel en USD), agrupa todo lo que
+ * queda afuera en "Resto de rutas" y "Sin ruta asignable" (ALMACENAMIENTO, FLETE_PRODUCTO — los
+ * cargos que no llevan id_asignacion): sin esas dos columnas el panel en USD/tn no podria
+ * ponderar contra el costo total de la corrida sin dejar plata afuera en silencio. */
 async function matrizEstrategia(runId: string, material: string | null): Promise<MatrizEstrategia> {
   const filtros: Record<string, string> = { tipo_contable: "CAJA" };
   if (material) filtros.material = material;
@@ -55,30 +72,51 @@ async function matrizEstrategia(runId: string, material: string | null): Promise
     traerPorRutaYEtapa(runId, filtros),
   ]);
 
-  const top = porRuta.filas
-    .filter((f) => f.ruta !== "SIN_RUTA")
-    .slice(0, MAX_RUTAS_EN_MATRIZ)
-    .map((f) => f.ruta);
+  const nombradas = porRuta.filas.filter((f) => f.ruta !== "SIN_RUTA");
+  const top = nombradas.slice(0, MAX_RUTAS_EN_MATRIZ).map((f) => f.ruta);
+  const resto = nombradas.slice(MAX_RUTAS_EN_MATRIZ).map((f) => f.ruta);
+  const restoSet = new Set(resto);
+  const sinRuta = porRuta.filas.find((f) => f.ruta === "SIN_RUTA") ?? null;
 
   const totales: MatrizEstrategia["totales"] = {};
   for (const fila of porRuta.filas) {
-    if (top.includes(fila.ruta)) {
-      totales[fila.ruta] = {
-        importe: fila.importe_usd ?? 0,
-        toneladas: fila.toneladas,
-        porcentajeToneladas: fila.porcentaje_toneladas,
-      };
-    }
+    if (!top.includes(fila.ruta)) continue;
+    totales[fila.ruta] = {
+      importe: fila.importe_usd ?? 0,
+      toneladas: fila.toneladas,
+      porcentajeToneladas: fila.porcentaje_toneladas,
+    };
   }
+  if (resto.length > 0) {
+    const filasResto = nombradas.slice(MAX_RUTAS_EN_MATRIZ);
+    totales[RESTO_DE_RUTAS] = {
+      importe: filasResto.reduce((s, f) => s + (f.importe_usd ?? 0), 0),
+      toneladas: filasResto.reduce((s, f) => s + (f.toneladas ?? 0), 0),
+      porcentajeToneladas: filasResto.reduce((s, f) => s + (f.porcentaje_toneladas ?? 0), 0),
+    };
+  }
+  if (sinRuta) {
+    totales[SIN_RUTA_ASIGNABLE] = {
+      importe: sinRuta.importe_usd ?? 0,
+      toneladas: sinRuta.toneladas,
+      porcentajeToneladas: sinRuta.porcentaje_toneladas,
+    };
+  }
+
+  const columnas = [...top, ...(resto.length > 0 ? [RESTO_DE_RUTAS] : []), ...(sinRuta ? [SIN_RUTA_ASIGNABLE] : [])];
 
   const celdas: MatrizEstrategia["celdas"] = {};
   for (const celda of porRutaYEtapa.filas) {
-    if (!top.includes(celda.ruta)) continue;
+    let columna: string | null = null;
+    if (top.includes(celda.ruta)) columna = celda.ruta;
+    else if (celda.ruta === "SIN_RUTA") columna = SIN_RUTA_ASIGNABLE;
+    else if (restoSet.has(celda.ruta)) columna = RESTO_DE_RUTAS;
+    if (!columna) continue;
     celdas[celda.etapa] ??= {};
-    celdas[celda.etapa][celda.ruta] = celda.importe_usd ?? 0;
+    celdas[celda.etapa][columna] = (celdas[celda.etapa][columna] ?? 0) + (celda.importe_usd ?? 0);
   }
 
-  return { rutas: top, celdas, totales };
+  return { rutas: top, columnas, celdas, totales };
 }
 
 export default function PaginaCostoNivel2({ params }: { params: { runId: string } }) {
@@ -315,6 +353,8 @@ export default function PaginaCostoNivel2({ params }: { params: { runId: string 
         materialSeleccionado={material}
         onMaterial={setMaterial}
       />
+
+      <MatrizUnitariaPanel matriz={matriz} etapasDelWaterfall={waterfall.pasos.map((p) => p.etapa)} resumen={resumen} />
     </div>
   );
 }
@@ -450,6 +490,113 @@ function MatrizEstrategiaPanel({
         <code>circuito</code> declarado, que es un tipo de consolidación. Tn y % estrategia
         salen de <code>asignaciones_elegidas</code>.
       </p>
+    </section>
+  );
+}
+
+function usdPorTn(importe: number, toneladas: number | null): number | null {
+  if (!toneladas) return null;
+  return importe / toneladas;
+}
+
+/** El mismo cruce etapa x ruta que el panel de arriba, pero en USD/tn en vez de USD — con dos
+ * columnas que ese panel no muestra ("Resto de rutas" y "Sin ruta asignable") para que el
+ * ponderado del pie no deje plata afuera: es la unica forma honesta de que coincida con el
+ * costo total de la corrida. De paso, etapas que ningun arco nombrado factura directo —
+ * ALMACENAMIENTO, el flete a depósito — aparecen porque viven en "Sin ruta asignable". */
+function MatrizUnitariaPanel({
+  matriz,
+  etapasDelWaterfall,
+  resumen,
+}: {
+  matriz: MatrizEstrategia | null;
+  etapasDelWaterfall: string[];
+  resumen: ResumenCostos;
+}) {
+  const columnas = matriz?.columnas ?? [];
+  const etapas = (etapasDelWaterfall ?? []).filter((e) => matriz && e in matriz.celdas);
+
+  const importeTotal = columnas.reduce((s, c) => s + (matriz?.totales[c]?.importe ?? 0), 0);
+  const toneladasTotal = columnas.reduce((s, c) => s + (matriz?.totales[c]?.toneladas ?? 0), 0);
+  const ponderado = usdPorTn(importeTotal, toneladasTotal);
+
+  // "Sin ruta asignable" no tiene id_asignacion, asi que no tiene toneladas propias — son cargos
+  // periodicos (ALMACENAMIENTO, flete a deposito), no ligados a un envio puntual. Repartirlos
+  // sobre las toneladas totales de la red es la unica forma de que se vean en USD/tn en vez de
+  // desaparecer en "sin dato": no es su tonelaje, es el tonelaje que sostiene ese costo comun.
+  const toneladasDeLaColumna = (c: string): number | null =>
+    c === SIN_RUTA_ASIGNABLE ? toneladasTotal || null : matriz?.totales[c]?.toneladas ?? null;
+
+  return (
+    <section className="panel">
+      <h2 className="titulo-panel">Estrategia por producto — USD/tn por etapa</h2>
+      <p className="mb-2 text-xs text-slate-500">
+        el mismo cruce de arriba, en USD/tn: cada celda es el importe de esa etapa en esa columna
+        dividido por las toneladas de esa columna. Con &quot;Resto de rutas&quot; y &quot;Sin ruta
+        asignable&quot; (ALMACENAMIENTO, flete a depósito y demás cargos que no llevan
+        <code>id_asignacion</code>, repartidos sobre las toneladas totales de la red porque no
+        tienen envío propio) la tabla cubre el 100% del filtro, así que el ponderado del pie
+        coincide con el costo total — nada queda afuera en silencio.
+      </p>
+
+      {!matriz ? (
+        <p className="text-sm text-slate-500">cargando...</p>
+      ) : columnas.length === 0 ? (
+        <p className="text-sm text-slate-500">sin rutas físicas reconstruidas para este filtro</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>USD/tn</th>
+                {columnas.map((c) => (
+                  <th key={c} className="text-right">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {etapas.map((etapa) => (
+                <tr key={etapa}>
+                  <td>{etapa}</td>
+                  {columnas.map((c) => {
+                    const importe = matriz.celdas[etapa]?.[c] ?? 0;
+                    const valor = usdPorTn(importe, toneladasDeLaColumna(c));
+                    return (
+                      <td key={c} className="text-right">
+                        {valor === null ? SIN_DATO : usd(valor)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              <tr className="font-semibold">
+                <td>Total USD/tn</td>
+                {columnas.map((c) => {
+                  const col = matriz.totales[c];
+                  const valor = col ? usdPorTn(col.importe, toneladasDeLaColumna(c)) : null;
+                  return (
+                    <td key={c} className="text-right">
+                      {valor === null ? SIN_DATO : usd(valor)}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {matriz && columnas.length > 0 ? (
+        <p className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-600">
+          <strong>ponderado de esta tabla: {ponderado === null ? SIN_DATO : usd(ponderado)}</strong> ·{" "}
+          {numero(toneladasTotal, 0)} tn asignadas (asignaciones_elegidas) — arriba, en la
+          cabecera, USD por tonelada es {usd(resumen.usd_por_tn.valor)} sobre{" "}
+          {baseDe(resumen.usd_por_tn)} (toneladas <em>entregadas</em>, no asignadas: por eso los
+          dos números se acercan pero no tienen por qué ser idénticos).
+        </p>
+      ) : null}
     </section>
   );
 }
