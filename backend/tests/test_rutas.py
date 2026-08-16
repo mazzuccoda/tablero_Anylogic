@@ -3,6 +3,7 @@
 import pytest
 from rest_framework.test import APIClient
 
+from apps.core.models import ArcExecution, CostCharge, TipoContable
 from apps.dashboard.cost_explorer.agregados import costos_por_categoria_con_cantidad
 from apps.dashboard.cost_explorer.filtros import FiltrosCostos
 from apps.dashboard.cost_explorer.rutas import SIN_RUTA, costos_por_ruta, costos_por_ruta_y_etapa
@@ -40,16 +41,52 @@ def test_la_ruta_encadena_los_sitios_reales_no_el_tipo_de_circuito(run, caja):
     assert not any("CIRCUITO" in ruta for ruta in filas)
 
 
-def test_el_costo_sin_asignacion_no_se_pierde(run, caja):
-    """ALMACENAMIENTO (C-0008) no tiene id_asignacion: cae en SIN_RUTA, no se descarta — la suma
-    de todas las rutas sigue cerrando contra el total de caja."""
+def test_el_costo_sin_asignacion_se_resuelve_por_lote_cuando_no_es_ambiguo(run, caja):
+    """ALMACENAMIENTO (C-0008) no tiene id_asignacion, pero su id_lote (L-MAP-01) es el mismo que
+    el de A-0002 y ese lote solo alimenta esa ruta: se atribuye ahi, no cae en SIN_RUTA. La suma
+    de todas las rutas sigue cerrando contra el total de caja de cualquier manera."""
     filas = costos_por_ruta(run, caja)
     por_ruta = {f["ruta"]: f for f in filas}
 
-    assert SIN_RUTA in por_ruta
-    assert por_ruta[SIN_RUTA]["importe_usd"] == 540.0
+    assert SIN_RUTA not in por_ruta
+    assert por_ruta["DEPOSITO_SUR→TERMINAL_BAHIA"]["importe_usd"] == pytest.approx(20040.0 + 540.0)
 
     assert sum(f["importe_usd"] or 0.0 for f in filas) == CAJA_TOTAL
+
+
+def test_un_lote_que_se_reparte_en_rutas_distintas_no_se_atribuye(run, caja):
+    """Si el mismo lote alimenta dos asignaciones que terminan en rutas distintas, no hay forma
+    de saber sin inventar un prorrateo cuanto del costo sin id_asignacion le toca a cada una —
+    se queda en SIN_RUTA a proposito."""
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-EXTRA-1",
+        id_asignacion="A-0002-B",  # otra asignacion, mismo lote, ruta distinta a la de A-0002
+        id_lote="L-MAP-01",
+        tipo_arco="ORIGEN_TERMINAL_CONTENEDOR_CARGADO",
+        origen="DEPOSITO_SUR",
+        destino="OTRO_DESTINO",
+        dia_inicio=5.0,
+        dia_fin=5.5,
+    )
+    CostCharge.objects.create(
+        simulation_run=run,
+        id_costo="C-EXTRA-AMBIGUO",
+        dia=5.0,
+        tipo_contable=TipoContable.CAJA,
+        categoria="ALMACENAMIENTO",
+        id_lote="L-MAP-01",
+        unidad="USD_TN_DIA",
+        cantidad=10.0,
+        tarifa=1.0,
+        importe_usd=10.0,
+    )
+
+    filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
+    # ahora L-MAP-01 alcanza dos rutas (DEPOSITO_SUR→TERMINAL_BAHIA y DEPOSITO_SUR→OTRO_DESTINO):
+    # ningun cargo de ese lote sin id_asignacion propio se puede repartir sin inventar un
+    # criterio — ni el nuevo (10.0) ni el que antes se atribuia sin ambiguedad (C-0008, 540.0)
+    assert filas[SIN_RUTA]["importe_usd"] == pytest.approx(550.0)
 
 
 def test_las_toneladas_por_ruta_salen_de_las_asignaciones(run, caja):
@@ -57,9 +94,31 @@ def test_las_toneladas_por_ruta_salen_de_las_asignaciones(run, caja):
 
     assert filas["PLANTA_NORTE→TERMINAL_BAHIA"]["toneladas"] == 500.0
     assert filas["DEPOSITO_SUR→TERMINAL_BAHIA"]["toneladas"] == 300.0
-    # SIN_RUTA no tiene asignacion propia (viene de un cargo sin id_asignacion), asi que no
-    # deberia sumar toneladas de ninguna asignacion real
-    assert filas[SIN_RUTA]["toneladas"] is None
+
+
+def test_el_tramo_planta_deposito_se_antepone_cuando_el_lote_no_es_ambiguo(run, caja):
+    """El arco PLANTA_DEPOSITO usa su propio id_asignacion (prefijo TRA-, distinto del ASG- del
+    envio final): sin tratarlo aparte, la ruta de A-0001 arrancaria en PLANTA_NORTE y perderia el
+    tramo real desde planta. Se une por id_lote (L-UREA-01, compartido con A-0001)."""
+    ArcExecution.objects.create(
+        simulation_run=run,
+        id_evento_arco="A-PLANTA-1",
+        id_asignacion="TRA-UREA-1",
+        id_lote="L-UREA-01",
+        tipo_arco="PLANTA_DEPOSITO",
+        origen="PLANTA_CENTRAL",
+        destino="PLANTA_NORTE",
+        dia_inicio=0.5,
+        dia_fin=1.0,
+    )
+
+    filas = {f["ruta"]: f for f in costos_por_ruta(run, caja)}
+
+    assert "PLANTA_CENTRAL→PLANTA_NORTE→TERMINAL_BAHIA" in filas
+    assert "PLANTA_NORTE→TERMINAL_BAHIA" not in filas
+    # el id_asignacion de la transferencia (TRA-...) no aparece como una ruta propia: ningun
+    # cargo real lo referencia, solo sirve para encontrar el tramo desde planta
+    assert not any(ruta.startswith("TRA-") for ruta in filas)
 
 
 def test_el_filtro_por_material_recorta_costo_y_toneladas_igual(run):
@@ -82,8 +141,8 @@ def test_la_matriz_etapa_x_ruta_cierra_contra_el_total(run, caja):
     por_ruta_etapa = {(f["ruta"], f["etapa"]): f["importe_usd"] for f in celdas}
     # C-0001: OUT_DEPOSITO 6000 en la ruta de A-0001
     assert por_ruta_etapa[("PLANTA_NORTE→TERMINAL_BAHIA", "EGRESO_DEPOSITO")] == 6000.0
-    # C-0008 (ALMACENAMIENTO, sin asignacion) cae en SIN_RUTA
-    assert por_ruta_etapa[(SIN_RUTA, "ALMACENAMIENTO")] == 540.0
+    # C-0008 (ALMACENAMIENTO, sin id_asignacion) se resuelve por id_lote (L-MAP-01, de A-0002)
+    assert por_ruta_etapa[("DEPOSITO_SUR→TERMINAL_BAHIA", "ALMACENAMIENTO")] == 540.0
 
 
 def test_endpoint_by_route_stage(api, run):
@@ -111,7 +170,7 @@ def test_endpoint_by_route_filtra_por_material(api, run):
     cuerpo = respuesta.json()
     assert cuerpo["filtros_aplicados"]["material"] == "MAT_MAP"
     rutas = {f["ruta"] for f in cuerpo["filas"]}
-    assert rutas == {"DEPOSITO_SUR→TERMINAL_BAHIA", SIN_RUTA}
+    assert rutas == {"DEPOSITO_SUR→TERMINAL_BAHIA"}
 
 
 # --- Precio x volumen -------------------------------------------------------------------------
